@@ -14,7 +14,6 @@ const app = new App({
     token: process.env.SLACK_BOT_TOKEN,
     socketMode: true,
     appToken: process.env.SLACK_APP_TOKEN,
-    port: process.env.PORT || 3000
 });
 
 // Create temp directories
@@ -318,13 +317,11 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
 // Start the app
 (async () => {
     try {
-        const port = process.env.PORT || 3000;
-        await app.start({ port: port });
-        console.log(`⚡️ Bolt app is running on port ${port}!`);
+        await app.start();
+        console.log('⚡️ Bolt app is running!');
         
         // Log more information about the server
         console.log('Environment:', process.env.NODE_ENV);
-        console.log('Port:', port);
     } catch (error) {
         console.error('Error starting app:', error);
         process.exit(1);
