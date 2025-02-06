@@ -27,13 +27,18 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation) 
         const metadata = generateRandomMetadata();
         const speedMultiplier = 1 + (speedAdjustment / 100);
 
-        let command = ffmpeg(inputPath)
-            // Add resource constraints
+        let command = ffmpeg(inputPath);
+
+        // Resource constraints
+        command
             .outputOptions([
-                '-threads 4',          // Limit CPU threads
-                '-preset ultrafast',   // Fastest encoding
+                '-threads 4',
+                '-preset ultrafast',
                 '-max_muxing_queue_size 1024'
-            ])
+            ]);
+
+        // Video and audio filters
+        command
             .videoFilters([
                 {
                     filter: 'setpts',
@@ -49,16 +54,23 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation) 
                     filter: 'atempo',
                     options: [speedMultiplier]
                 }
-            ])
-            .outputOptions([
-                `-metadata creation_time="${metadata.creation_time}"`,
-                `-metadata date="${metadata.date}"`,
-                `-metadata year="${metadata.year}"`,
-                `-metadata device_model="${metadata.device_model}"`,
-                `-metadata encoder="${metadata.encoder}"`
             ]);
 
-        // Add progress monitoring
+        // Add metadata correctly
+        command
+            .addOutputOption('-metadata', `date=${metadata.date}`)
+            .addOutputOption('-metadata', `year=${metadata.year}`)
+            .addOutputOption('-metadata', `device_model=${metadata.device_model}`)
+            .addOutputOption('-metadata', `encoder=${metadata.encoder}`);
+
+        // Quality and optimization settings
+        command
+            .outputOptions([
+                '-crf 28',
+                '-movflags +faststart'
+            ]);
+
+        // Event handlers
         command.on('start', (commandLine) => {
             console.log('FFmpeg command:', commandLine);
         });
@@ -71,7 +83,7 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation) 
 
         command.on('error', (err, stdout, stderr) => {
             console.error('FFmpeg error:', err);
-            console.error('FFmpeg stderr:', stderr);
+            if (stderr) console.error('FFmpeg stderr:', stderr);
             reject(err);
         });
 
@@ -80,13 +92,8 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation) 
             resolve(outputPath);
         });
 
-        // Save with quality reduction to save memory
-        command
-            .outputOptions([
-                '-crf 28',            // Reduce quality slightly
-                '-movflags +faststart' // Optimize for web playback
-            ])
-            .save(outputPath);
+        // Start processing
+        command.save(outputPath);
     });
 }
 
