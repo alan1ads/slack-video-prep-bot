@@ -255,7 +255,7 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
             text: `Starting to process ${channelVideos.length} videos... This might take a while.`
         });
 
-        // Process each video
+        // Process videos sequentially with delay between each
         for (const videoInfo of channelVideos) {
             try {
                 const inputPath = path.join(inputDir, `input_${videoInfo.file_id}.mp4`);
@@ -267,27 +267,41 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
                 await downloadFile(videoInfo.file.url_private_download, inputPath);
                 console.log('Download completed for:', videoInfo.file.name);
                 
+                // Add a small delay between operations
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
                 // Process
-                await processVideo(inputPath, outputPath, speedAdjustment, saturation);
-                console.log('Processing completed for:', videoInfo.file.name);
+                try {
+                    await processVideo(inputPath, outputPath, speedAdjustment, saturation);
+                    console.log('Processing completed for:', videoInfo.file.name);
 
-                // Upload
-                await client.files.uploadV2({
-                    channel_id: channelId,
-                    file: fs.createReadStream(outputPath),
-                    filename: `Processed_${videoInfo.file.name}`,
-                    title: `Processed_${videoInfo.file.name}`
-                });
-                console.log('Upload completed for:', videoInfo.file.name);
+                    // Upload
+                    await client.files.uploadV2({
+                        channel_id: channelId,
+                        file: fs.createReadStream(outputPath),
+                        filename: `Processed_${videoInfo.file.name}`,
+                        title: `Processed_${videoInfo.file.name}`
+                    });
+                    console.log('Upload completed for:', videoInfo.file.name);
 
-                // Cleanup individual video files
-                fs.unlinkSync(inputPath);
-                fs.unlinkSync(outputPath);
+                    await client.chat.postMessage({
+                        channel: channelId,
+                        text: `✅ Processed: ${videoInfo.file.name}`
+                    });
+                } catch (processError) {
+                    console.error(`Error processing video: ${processError.message}`);
+                    await client.chat.postMessage({
+                        channel: channelId,
+                        text: `⚠️ Warning: ${videoInfo.file.name} was too large to process. Try a smaller video.`
+                    });
+                }
 
-                await client.chat.postMessage({
-                    channel: channelId,
-                    text: `✅ Processed: ${videoInfo.file.name}`
-                });
+                // Cleanup regardless of success or failure
+                if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+                if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+
+                // Add delay between videos
+                await new Promise(resolve => setTimeout(resolve, 2000));
 
             } catch (error) {
                 console.error(`Error processing video ${videoInfo.file_id}:`, error);
