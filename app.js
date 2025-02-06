@@ -1,6 +1,7 @@
 const { App } = require('@slack/bolt');
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
 const { processVideo } = require('./videoProcessor');
 const https = require('https');
 require('dotenv').config();
@@ -314,11 +315,23 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
     }
 });
 
+// Create a basic HTTP server
+const server = http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end('Slack bot is running!');
+});
+
 // Start the app
 (async () => {
     try {
         await app.start();
         console.log('⚡️ Bolt app is running!');
+        
+        // Start HTTP server
+        const PORT = process.env.PORT || 3000;
+        server.listen(PORT, () => {
+            console.log(`HTTP server is running on port ${PORT}`);
+        });
         
         // Log more information about the server
         console.log('Environment:', process.env.NODE_ENV);
