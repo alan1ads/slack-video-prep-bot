@@ -5,6 +5,7 @@ const { processVideo } = require('./videoProcessor');
 const https = require('https');
 require('dotenv').config();
 
+
 // Debug lines to check if tokens are loaded
 console.log('Bot Token:', process.env.SLACK_BOT_TOKEN ? 'Found' : 'Missing');
 console.log('App Token:', process.env.SLACK_APP_TOKEN ? 'Found' : 'Missing');
@@ -306,7 +307,15 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
     }
 });
 
+// Replace the last few lines with this:
+const PORT = process.env.PORT || 3000;
+
 (async () => {
-    await app.start(process.env.PORT || 3000);
-    console.log('⚡️ Bolt app is running!');
+    try {
+        await app.start(PORT);
+        console.log(`⚡️ Bolt app is running on port ${PORT}!`);
+    } catch (error) {
+        console.error('Error starting the app:', error);
+        process.exit(1);
+    }
 })();
