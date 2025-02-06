@@ -307,15 +307,8 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
     }
 });
 
-// Replace the last few lines with this:
-const PORT = process.env.PORT || 3000;
-
 (async () => {
-    try {
-        await app.start(PORT);
-        console.log(`⚡️ Bolt app is running on port ${PORT}!`);
-    } catch (error) {
-        console.error('Error starting the app:', error);
-        process.exit(1);
-    }
+    const port = process.env.PORT || 3000;
+    await app.start(port);
+    console.log(`⚡️ Bolt app is running on port ${port}!`);
 })();
