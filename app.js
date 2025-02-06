@@ -5,27 +5,35 @@ const { processVideo } = require('./videoProcessor');
 const https = require('https');
 require('dotenv').config();
 
-
 // Debug lines to check if tokens are loaded
 console.log('Bot Token:', process.env.SLACK_BOT_TOKEN ? 'Found' : 'Missing');
 console.log('App Token:', process.env.SLACK_APP_TOKEN ? 'Found' : 'Missing');
 
-// App initialization
+// App initialization with port configuration
 const app = new App({
     token: process.env.SLACK_BOT_TOKEN,
     socketMode: true,
-    appToken: process.env.SLACK_APP_TOKEN
+    appToken: process.env.SLACK_APP_TOKEN,
+    port: process.env.PORT || 3000
 });
 
 // Create temp directories
 const inputDir = path.join(__dirname, 'temp', 'input');
 const outputDir = path.join(__dirname, 'temp', 'output');
-fs.mkdirSync(inputDir, { recursive: true });
-fs.mkdirSync(outputDir, { recursive: true });
+
+// Create temp directories with error handling
+try {
+    fs.mkdirSync(inputDir, { recursive: true });
+    fs.mkdirSync(outputDir, { recursive: true });
+    console.log('Temp directories created/verified:');
+    console.log('Input directory:', inputDir);
+    console.log('Output directory:', outputDir);
+} catch (error) {
+    console.error('Error creating temp directories:', error);
+}
 
 // Store for pending videos
 const pendingVideos = new Map();
-const processingQueue = new Map();
 
 // Download function with proper headers
 async function downloadFile(url, outputPath) {
@@ -225,7 +233,7 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
     }
 });
 
-// Handle modal submission for multiple videos
+// Handle modal submission
 app.view('video_processing_modal', async ({ ack, body, view, client }) => {
     await ack();
 
@@ -307,8 +315,18 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
     }
 });
 
+// Start the app
 (async () => {
-    const port = process.env.PORT || 3000;
-    await app.start(port);
-    console.log(`⚡️ Bolt app is running on port ${port}!`);
+    try {
+        const port = process.env.PORT || 3000;
+        await app.start({ port: port });
+        console.log(`⚡️ Bolt app is running on port ${port}!`);
+        
+        // Log more information about the server
+        console.log('Environment:', process.env.NODE_ENV);
+        console.log('Port:', port);
+    } catch (error) {
+        console.error('Error starting app:', error);
+        process.exit(1);
+    }
 })();
