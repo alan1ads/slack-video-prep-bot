@@ -22,7 +22,7 @@ function generateRandomMetadata() {
     };
 }
 
-async function processVideo(inputPath, outputPath, speedAdjustment, saturation) {
+async function processVideo(inputPath, outputPath, speedAdjustment, saturation, brightness, contrast) {
     return new Promise((resolve, reject) => {
         const metadata = generateRandomMetadata();
         const speedMultiplier = 1 + (speedAdjustment / 100);
@@ -46,7 +46,7 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation) 
                 },
                 {
                     filter: 'eq',
-                    options: `saturation=${saturation}`
+                    options: `saturation=${saturation}:brightness=${brightness}:contrast=${contrast}`
                 }
             ])
             .audioFilters([

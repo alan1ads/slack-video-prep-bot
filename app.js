@@ -223,6 +223,38 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
                             type: 'plain_text',
                             text: 'Saturation Adjustment'
                         }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'brightness_adjustment',
+                        element: {
+                            type: 'plain_text_input',
+                            action_id: 'brightness_input',
+                            placeholder: {
+                                type: 'plain_text',
+                                text: 'Enter a number (e.g., 0.1 for 10% brighter, -0.1 for 10% darker)'
+                            }
+                        },
+                        label: {
+                            type: 'plain_text',
+                            text: 'Brightness Adjustment'
+                        }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'contrast_adjustment',
+                        element: {
+                            type: 'plain_text_input',
+                            action_id: 'contrast_input',
+                            placeholder: {
+                                type: 'plain_text',
+                                text: 'Enter a number (e.g., 1.2 for 20% more contrast)'
+                            }
+                        },
+                        label: {
+                            type: 'plain_text',
+                            text: 'Contrast Adjustment'
+                        }
                     }
                 ],
                 private_metadata: body.channel.id
@@ -247,6 +279,8 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
 
     const speedAdjustment = parseFloat(view.state.values.speed_adjustment.speed_input.value);
     const saturation = parseFloat(view.state.values.saturation_adjustment.saturation_input.value);
+    const brightness = parseFloat(view.state.values.brightness_adjustment.brightness_input.value);
+    const contrast = parseFloat(view.state.values.contrast_adjustment.contrast_input.value);
 
     try {
         // Notify start of processing
@@ -272,7 +306,7 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
 
                 // Process
                 try {
-                    await processVideo(inputPath, outputPath, speedAdjustment, saturation);
+                    await processVideo(inputPath, outputPath, speedAdjustment, saturation, brightness, contrast);
                     console.log('Processing completed for:', videoInfo.file.name);
 
                     // Upload
