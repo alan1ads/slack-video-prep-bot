@@ -152,7 +152,6 @@ app.event('file_shared', async ({ event, client }) => {
     }
 });
 
-// Handle "Process Videos" button click
 app.action('process_multiple_videos', async ({ ack, body, client }) => {
     await ack();
     
@@ -192,6 +191,31 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
                             text: `*Processing ${channelVideos.length} videos*`
                         }
                     },
+                    // Add this new checkbox block at the top
+                    {
+                        type: 'input',
+                        block_id: 'random_mode',
+                        optional: true,
+                        element: {
+                            type: 'checkboxes',
+                            action_id: 'random_mode_checkbox',
+                            options: [
+                                {
+                                    text: {
+                                        type: 'plain_text',
+                                        text: 'Use Random Mode (all parameters will be randomly generated)',
+                                        emoji: true
+                                    },
+                                    value: 'random'
+                                }
+                            ]
+                        },
+                        label: {
+                            type: 'plain_text',
+                            text: 'Processing Mode',
+                            emoji: true
+                        }
+                    },
                     {
                         type: 'input',
                         block_id: 'speed_adjustment',
@@ -206,7 +230,8 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
                         label: {
                             type: 'plain_text',
                             text: 'Speed Adjustment (%)'
-                        }
+                        },
+                        optional: true  // Make this optional so random mode can work
                     },
                     {
                         type: 'input',
@@ -222,7 +247,8 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
                         label: {
                             type: 'plain_text',
                             text: 'Saturation Adjustment'
-                        }
+                        },
+                        optional: true
                     },
                     {
                         type: 'input',
@@ -238,7 +264,8 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
                         label: {
                             type: 'plain_text',
                             text: 'Brightness Adjustment'
-                        }
+                        },
+                        optional: true
                     },
                     {
                         type: 'input',
@@ -254,7 +281,8 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
                         label: {
                             type: 'plain_text',
                             text: 'Contrast Adjustment'
-                        }
+                        },
+                        optional: true
                     }
                 ],
                 private_metadata: body.channel.id
@@ -277,10 +305,39 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
         return;
     }
 
-    const speedAdjustment = parseFloat(view.state.values.speed_adjustment.speed_input.value);
-    const saturation = parseFloat(view.state.values.saturation_adjustment.saturation_input.value);
-    const brightness = parseFloat(view.state.values.brightness_adjustment.brightness_input.value);
-    const contrast = parseFloat(view.state.values.contrast_adjustment.contrast_input.value);
+    // Check if random mode is selected
+    const randomMode = view.state.values.random_mode.random_mode_checkbox.selected_options?.length > 0;
+    
+    // Get values based on mode (random or manual)
+    let speedAdjustment, saturation, brightness, contrast;
+    
+    if (randomMode) {
+        // Generate random values within reasonable ranges
+        speedAdjustment = (Math.random() * 10 - 5).toFixed(2); // -5% to +5%
+        saturation = (0.9 + Math.random() * 0.3).toFixed(2);  // 0.9 to 1.2
+        brightness = (Math.random() * 0.2 - 0.1).toFixed(2);  // -0.1 to 0.1
+        contrast = (0.9 + Math.random() * 0.3).toFixed(2);    // 0.9 to 1.2
+        
+        // Log the random values
+        console.log('Using random mode with values:', {
+            speedAdjustment,
+            saturation,
+            brightness,
+            contrast
+        });
+        
+        // Notify user that random values are being used
+        await client.chat.postMessage({
+            channel: channelId,
+            text: `Processing videos with random adjustments:\n• Speed: ${speedAdjustment}%\n• Saturation: ${saturation}\n• Brightness: ${brightness}\n• Contrast: ${contrast}`
+        });
+    } else {
+        // Use manual values from form
+        speedAdjustment = parseFloat(view.state.values.speed_adjustment.speed_input.value || "0");
+        saturation = parseFloat(view.state.values.saturation_adjustment.saturation_input.value || "1");
+        brightness = parseFloat(view.state.values.brightness_adjustment.brightness_input.value || "0");
+        contrast = parseFloat(view.state.values.contrast_adjustment.contrast_input.value || "1");
+    }
 
     try {
         // Notify start of processing
