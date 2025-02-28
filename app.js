@@ -283,7 +283,25 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
                             text: 'Contrast Adjustment'
                         },
                         optional: true
-                    }
+                    },
+                    // Add this field to your modal blocks
+                    {
+                        type: 'input',
+                        block_id: 'fps_adjustment',
+                        element: {
+                            type: 'plain_text_input',
+                            action_id: 'fps_input',
+                            placeholder: {
+                                type: 'plain_text',
+                                text: 'Enter a number (e.g., 2 for 2% higher FPS, -5 for 5% lower FPS)'
+                            }
+                        },
+                        label: {
+                            type: 'plain_text',
+                            text: 'FPS Adjustment (%)'
+                        },
+                        optional: true
+                    },
                 ],
                 private_metadata: body.channel.id
             }
@@ -309,18 +327,20 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
     const randomMode = view.state.values.random_mode.random_mode_checkbox.selected_options?.length > 0;
     
     // Get values based on mode (random or manual)
-    let speedAdjustment, saturation, brightness, contrast;
+    let speedAdjustment, fpsAdjustment, saturation, brightness, contrast;
     
     if (randomMode) {
         // Generate random values within reasonable ranges
         speedAdjustment = (Math.random() * 10 - 5).toFixed(2); // -5% to +5%
-        saturation = (0.9 + Math.random() * 0.3).toFixed(2);  // 0.9 to 1.2
-        brightness = (Math.random() * 0.2 - 0.1).toFixed(2);  // -0.1 to 0.1
-        contrast = (0.9 + Math.random() * 0.3).toFixed(2);    // 0.9 to 1.2
+        fpsAdjustment = (Math.random() * 10 - 5).toFixed(2);   // -5% to +5% (separate from speed)
+        saturation = (0.9 + Math.random() * 0.3).toFixed(2);   // 0.9 to 1.2
+        brightness = (Math.random() * 0.2 - 0.1).toFixed(2);   // -0.1 to 0.1
+        contrast = (0.9 + Math.random() * 0.3).toFixed(2);     // 0.9 to 1.2
         
         // Log the random values
         console.log('Using random mode with values:', {
             speedAdjustment,
+            fpsAdjustment,
             saturation,
             brightness,
             contrast
@@ -329,11 +349,12 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
         // Notify user that random values are being used
         await client.chat.postMessage({
             channel: channelId,
-            text: `Processing videos with random adjustments:\n• Speed: ${speedAdjustment}%\n• Saturation: ${saturation}\n• Brightness: ${brightness}\n• Contrast: ${contrast}`
+            text: `Processing videos with random adjustments:\n• Speed: ${speedAdjustment}%\n• FPS: ${fpsAdjustment}%\n• Saturation: ${saturation}\n• Brightness: ${brightness}\n• Contrast: ${contrast}`
         });
     } else {
         // Use manual values from form
         speedAdjustment = parseFloat(view.state.values.speed_adjustment.speed_input.value || "0");
+        fpsAdjustment = parseFloat(view.state.values.fps_adjustment.fps_input.value || "0");
         saturation = parseFloat(view.state.values.saturation_adjustment.saturation_input.value || "1");
         brightness = parseFloat(view.state.values.brightness_adjustment.brightness_input.value || "0");
         contrast = parseFloat(view.state.values.contrast_adjustment.contrast_input.value || "1");
@@ -361,9 +382,9 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
                 // Add a small delay between operations
                 await new Promise(resolve => setTimeout(resolve, 1000));
 
-                // Process
+                // Process - passing fpsAdjustment as an additional parameter
                 try {
-                    await processVideo(inputPath, outputPath, speedAdjustment, saturation, brightness, contrast);
+                    await processVideo(inputPath, outputPath, speedAdjustment, saturation, brightness, contrast, fpsAdjustment);
                     console.log('Processing completed for:', videoInfo.file.name);
 
                     // Upload

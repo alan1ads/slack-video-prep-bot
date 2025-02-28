@@ -93,11 +93,11 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                 originalFps = num / den;
             }
             
-            // Generate a random FPS adjustment within ±5%
-            const fpsAdjustment = 0.95 + (Math.random() * 0.1); // Random value between 0.95 and 1.05
-            const adjustedFps = originalFps * fpsAdjustment;
-            
-            console.log(`Original FPS: ${originalFps}, Adjusted FPS: ${adjustedFps}`);
+             // Apply FPS adjustment if provided, otherwise generate a random one
+             const fpsMultiplier = fpsAdjustment ? (1 + (fpsAdjustment / 100)) : (0.95 + Math.random() * 0.1);
+             const adjustedFps = originalFps * fpsMultiplier;
+             
+             console.log(`Original FPS: ${originalFps}, Adjusted FPS: ${adjustedFps}, Speed Adjustment: ${speedAdjustment}%`);
             // END OF NEW CODE FOR FPS DETECTION
             
             let command = ffmpeg(inputPath);
