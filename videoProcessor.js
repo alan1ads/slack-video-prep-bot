@@ -65,7 +65,7 @@ function generateRandomMetadata() {
     };
 }
 
-async function processVideo(inputPath, outputPath, speedAdjustment, saturation, brightness, contrast) {
+async function processVideo(inputPath, outputPath, speedAdjustment, saturation, brightness, contrast, fpsAdjustment = null) {
     return new Promise((resolve, reject) => {
         const metadata = generateRandomMetadata();
         const speedMultiplier = 1 + (speedAdjustment / 100);
