@@ -330,12 +330,12 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
     let speedAdjustment, fpsAdjustment, saturation, brightness, contrast;
     
     if (randomMode) {
-        // Generate random values within reasonable ranges
-        speedAdjustment = (Math.random() * 10 - 5).toFixed(2); // -5% to +5%
-        fpsAdjustment = (Math.random() * 10 - 5).toFixed(2);   // -5% to +5% (separate from speed)
-        saturation = (0.9 + Math.random() * 0.3).toFixed(2);   // 0.9 to 1.2
-        brightness = (Math.random() * 0.2 - 0.1).toFixed(2);   // -0.1 to 0.1
-        contrast = (0.9 + Math.random() * 0.3).toFixed(2);     // 0.9 to 1.2
+        // Generate random values within specified ranges
+        speedAdjustment = (Math.random() * 200 - 100).toFixed(2);       // -100% to +100%
+        fpsAdjustment = (Math.random() * 20 - 10).toFixed(2);          // -10% to +10%
+        saturation = (Math.random() * 2).toFixed(2);                   // 0 to 2
+        brightness = (Math.random() * 2 - 1).toFixed(2);               // -1 to 1
+        contrast = (Math.random() * 2).toFixed(2);                     // 0 to 2
         
         // Log the random values
         console.log('Using random mode with values:', {
@@ -358,6 +358,13 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
         saturation = parseFloat(view.state.values.saturation_adjustment.saturation_input.value || "1");
         brightness = parseFloat(view.state.values.brightness_adjustment.brightness_input.value || "0");
         contrast = parseFloat(view.state.values.contrast_adjustment.contrast_input.value || "1");
+        
+        // Apply limits to manual inputs
+        speedAdjustment = Math.max(-100, Math.min(100, speedAdjustment)); // Limit -100 to 100
+        fpsAdjustment = Math.max(-10, Math.min(10, fpsAdjustment));       // Limit -10 to 10
+        saturation = Math.max(0, Math.min(2, saturation));                // Limit 0 to 2
+        brightness = Math.max(-1, Math.min(1, brightness));               // Limit -1 to 1
+        contrast = Math.max(0, Math.min(2, contrast));                    // Limit 0 to 2
     }
 
     try {

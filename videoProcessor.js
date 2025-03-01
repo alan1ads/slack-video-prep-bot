@@ -52,6 +52,7 @@ function generateRandomMetadata() {
     const randomLat = (Math.random() * 180 - 90).toFixed(3);
     const randomLong = (Math.random() * 360 - 180).toFixed(3);
     
+    // Look for this in videoProcessor.js and make sure it returns all values
     return {
         creation_time: `${randomYear}-${String(randomMonth).padStart(2, '0')}-${String(randomDay).padStart(2, '0')} ${String(randomHour).padStart(2, '0')}:${String(randomMin).padStart(2, '0')}:${String(randomSec).padStart(2, '0')}`,
         date: `${randomYear}-${String(randomMonth).padStart(2, '0')}-${String(randomDay).padStart(2, '0')}`,
@@ -67,6 +68,12 @@ function generateRandomMetadata() {
 
 async function processVideo(inputPath, outputPath, speedAdjustment, saturation, brightness, contrast, fpsAdjustment = null) {
     return new Promise((resolve, reject) => {
+        // Apply limits to parameters
+        speedAdjustment = Math.max(-100, Math.min(100, speedAdjustment)); // Limit -100 to 100
+        saturation = Math.max(0, Math.min(2, saturation));               // Limit 0 to 2
+        brightness = Math.max(-1, Math.min(1, brightness));              // Limit -1 to 1
+        contrast = Math.max(0, Math.min(2, contrast));                   // Limit 0 to 2
+        
         const metadata = generateRandomMetadata();
         const speedMultiplier = 1 + (speedAdjustment / 100);
 
@@ -93,11 +100,20 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                 originalFps = num / den;
             }
             
-             // Apply FPS adjustment if provided, otherwise generate a random one
-             const fpsMultiplier = fpsAdjustment ? (1 + (fpsAdjustment / 100)) : (0.95 + Math.random() * 0.1);
-             const adjustedFps = originalFps * fpsMultiplier;
+            // Apply FPS adjustment with your specified limits
+            let appliedFpsAdjustment = fpsAdjustment;
+            if (appliedFpsAdjustment !== null) {
+                // Apply limits to FPS adjustment (-10 to 10)
+                appliedFpsAdjustment = Math.max(-10, Math.min(10, appliedFpsAdjustment));
+            } else {
+                // Random value between -5 and 5 percent
+                appliedFpsAdjustment = (Math.random() * 10 - 5);
+            }
+            
+            const fpsMultiplier = 1 + (appliedFpsAdjustment / 100);
+            const adjustedFps = originalFps * fpsMultiplier;
              
-             console.log(`Original FPS: ${originalFps}, Adjusted FPS: ${adjustedFps}, Speed Adjustment: ${speedAdjustment}%`);
+            console.log(`Original FPS: ${originalFps}, Adjusted FPS: ${adjustedFps}, Speed Adjustment: ${speedAdjustment}%`);
             // END OF NEW CODE FOR FPS DETECTION
             
             let command = ffmpeg(inputPath);
