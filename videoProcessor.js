@@ -49,16 +49,29 @@ function generateRandomMetadata() {
     const randomLocation = locations[Math.floor(Math.random() * locations.length)];
     
     // Random GPS coordinates - not too precise to maintain some privacy
-    const randomLat = (Math.random() * 180 - 90).toFixed(3);
-    const randomLong = (Math.random() * 360 - 180).toFixed(3);
+    const randomLat = (Math.random() * 180 - 90).toFixed(4);
+    const randomLong = (Math.random() * 360 - 180).toFixed(4);
     
-    // Look for this in videoProcessor.js and make sure it returns all values
+    // More varied encoder strings
+    const encoders = [
+        `video_processor_${1000 + Math.floor(Math.random() * 9000)}`,
+        `content_creator_${2000 + Math.floor(Math.random() * 8000)}`,
+        `mediatools_${Math.floor(Math.random() * 1000)}`,
+        `enc_v${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 10)}`,
+        `H264_${500 + Math.floor(Math.random() * 500)}`
+    ];
+    const randomEncoder = encoders[Math.floor(Math.random() * encoders.length)];
+    
+    // Format the date strings with proper padding
+    const dateString = `${randomYear}-${String(randomMonth).padStart(2, '0')}-${String(randomDay).padStart(2, '0')}`;
+    const timeString = `${String(randomHour).padStart(2, '0')}:${String(randomMin).padStart(2, '0')}:${String(randomSec).padStart(2, '0')}`;
+    
     return {
-        creation_time: `${randomYear}-${String(randomMonth).padStart(2, '0')}-${String(randomDay).padStart(2, '0')} ${String(randomHour).padStart(2, '0')}:${String(randomMin).padStart(2, '0')}:${String(randomSec).padStart(2, '0')}`,
-        date: `${randomYear}-${String(randomMonth).padStart(2, '0')}-${String(randomDay).padStart(2, '0')}`,
+        creation_time: `${dateString} ${timeString}`,
+        date: dateString,
         year: String(randomYear),
         device_model: deviceModel,
-        encoder: `video_processor_${1000 + Math.floor(Math.random() * 9000)}`,
+        encoder: randomEncoder,
         software: randomSoftware,
         resolution: randomResolution,
         location: randomLocation,
@@ -74,11 +87,11 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
         brightness = Math.max(-1, Math.min(1, brightness));              // Limit -1 to 1
         contrast = Math.max(0, Math.min(2, contrast));                   // Limit 0 to 2
         
-        const metadata = generateRandomMetadata();
+        const randomMetadata = generateRandomMetadata(); // CHANGED: renamed to avoid conflict
         const speedMultiplier = 1 + (speedAdjustment / 100);
 
         // NEW CODE: Get the original FPS first
-        ffmpeg.ffprobe(inputPath, (err, metadata) => {
+        ffmpeg.ffprobe(inputPath, (err, metadata) => { // This metadata is from ffprobe, different variable
             if (err) {
                 console.error('Error getting video metadata:', err);
                 reject(err);
@@ -151,17 +164,17 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                     }
                 ]);
 
-            // Add metadata correctly
+            // Add metadata correctly - CHANGED: Use randomMetadata instead of metadata
             command
-            .addOutputOption('-metadata', `date=${metadata.date}`)
-            .addOutputOption('-metadata', `year=${metadata.year}`)
-            .addOutputOption('-metadata', `device_model=${metadata.device_model}`)
-            .addOutputOption('-metadata', `encoder=${metadata.encoder}`)
+            .addOutputOption('-metadata', `date=${randomMetadata.date}`)
+            .addOutputOption('-metadata', `year=${randomMetadata.year}`)
+            .addOutputOption('-metadata', `device_model=${randomMetadata.device_model}`)
+            .addOutputOption('-metadata', `encoder=${randomMetadata.encoder}`)
             // Add new metadata fields
-            .addOutputOption('-metadata', `software=${metadata.software}`)
-            .addOutputOption('-metadata', `resolution=${metadata.resolution}`)
-            .addOutputOption('-metadata', `location=${metadata.location}`)
-            .addOutputOption('-metadata', `gps=${metadata.gps}`);
+            .addOutputOption('-metadata', `software=${randomMetadata.software}`)
+            .addOutputOption('-metadata', `resolution=${randomMetadata.resolution}`)
+            .addOutputOption('-metadata', `location=${randomMetadata.location}`)
+            .addOutputOption('-metadata', `gps=${randomMetadata.gps}`);
             
             // Quality and optimization settings
             command
@@ -197,5 +210,4 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
         }); // NEW CODE: Close the ffprobe callback
     });
 }
-
 module.exports = { processVideo };
