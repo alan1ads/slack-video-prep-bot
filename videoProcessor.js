@@ -261,8 +261,28 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
 
             command.on('error', (err, stdout, stderr) => {
                 console.error('FFmpeg error:', err);
-                if (stderr) console.error('FFmpeg stderr:', stderr);
-                reject(err);
+                
+                // Log detailed stderr information for debugging
+                if (stderr) {
+                    console.error('FFmpeg stderr output:');
+                    console.error(stderr);
+                    
+                    // Check for common error patterns
+                    if (stderr.includes('Error reinitializing filters')) {
+                        console.error('Filter error detected. This might be due to incompatible filter combinations or invalid parameters.');
+                    }
+                    
+                    if (stderr.includes('Invalid argument')) {
+                        console.error('Invalid argument error detected. Check filter parameter ranges.');
+                    }
+                }
+                
+                // Create a more informative error with details
+                const enhancedError = new Error(`FFmpeg processing failed: ${err.message || 'Unknown error'}`);
+                enhancedError.originalError = err;
+                enhancedError.stderr = stderr;
+                
+                reject(enhancedError);
             });
 
             command.on('end', () => {
@@ -278,6 +298,41 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                 filter: 'atempo',
                 options: [speedMultiplier]
             });
+
+            // Handle speed adjustment with proper atempo limits (0.5-2.0)
+            if (speedMultiplier !== 1.0) {
+                if (speedMultiplier < 0.5) {
+                    // For extreme slowdowns, chain multiple atempo filters
+                    // Use 0.5 (the min value) multiple times
+                    const iterations = Math.ceil(Math.log(speedMultiplier) / Math.log(0.5));
+                    const iterationValue = Math.pow(speedMultiplier, 1/iterations);
+                    
+                    for (let i = 0; i < iterations; i++) {
+                        audioFilters.push({
+                            filter: 'atempo',
+                            options: [Math.max(0.5, iterationValue)]
+                        });
+                    }
+                } else if (speedMultiplier > 2.0) {
+                    // For extreme speedups, chain multiple atempo filters
+                    // Use 2.0 (the max value) multiple times
+                    const iterations = Math.ceil(Math.log(speedMultiplier) / Math.log(2.0));
+                    const iterationValue = Math.pow(speedMultiplier, 1/iterations);
+                    
+                    for (let i = 0; i < iterations; i++) {
+                        audioFilters.push({
+                            filter: 'atempo',
+                            options: [Math.min(2.0, iterationValue)]
+                        });
+                    }
+                } else {
+                    // Within normal range, use a single atempo filter
+                    audioFilters.push({
+                        filter: 'atempo',
+                        options: [speedMultiplier]
+                    });
+                }
+            }
             
             // Apply each requested audio filter if a value is provided
             
@@ -299,9 +354,24 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
             
             // Pitch Shift
             if (pitchShift !== null) {
+                // Get audio sample rate from metadata
+                let sampleRate = 44100; // Default
+                const audioStream = metadata.streams.find(stream => stream.codec_type === 'audio');
+                if (audioStream && audioStream.sample_rate) {
+                    sampleRate = parseInt(audioStream.sample_rate);
+                }
+                
+                // Calculate pitch shift using the actual sample rate
+                const pitchFactor = Math.pow(2, pitchShift/12);
                 audioFilters.push({
                     filter: 'asetrate',
-                    options: [`44100*${Math.pow(2, pitchShift/12)}`] // Convert semitones to frequency ratio
+                    options: [`${sampleRate}*${pitchFactor}`] // Convert semitones to frequency ratio
+                });
+                
+                // Resample back to original rate to avoid speed changes
+                audioFilters.push({
+                    filter: 'aresample',
+                    options: [sampleRate]
                 });
             }
             
@@ -349,9 +419,12 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
             
             // Compression/Limiting
             if (compression !== null) {
+                // Convert compression level (0-30) to threshold (0.001-1)
+                // Higher compression = lower threshold
+                const threshold = Math.max(0.001, Math.min(1, 1 - (compression / 30)));
                 audioFilters.push({
                     filter: 'acompressor',
-                    options: [`threshold=${-30 + compression}:ratio=${3 + compression/10}:attack=20:release=100`]
+                    options: [`threshold=${threshold}:ratio=${3 + compression/10}:attack=20:release=100`]
                 });
             }
             
@@ -395,6 +468,168 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
             
             // Apply all audio filters
             command.audioFilters(audioFilters);
+
+            // Apply all audio filters in optimal order:
+            // 1. Noise reduction first (clean the audio)
+            // 2. EQ and basic processing
+            // 3. Dynamic processing (compression)
+            // 4. Creative effects (reverb, delay)
+            // 5. Speed/pitch adjustments last
+            
+            let orderedAudioFilters = [];
+            
+            // 1. First apply noise reduction and cleanup
+            if (noiseReduction !== null) {
+                orderedAudioFilters.push({
+                    filter: 'highpass',
+                    options: [`f=${100 + noiseReduction * 10}`]
+                });
+            }
+            
+            // Apply Voice Enhancement early in the chain if selected
+            if (applyVoiceEnhancement) {
+                orderedAudioFilters.push(
+                    {
+                        filter: 'highpass',
+                        options: ['f=200'] // Remove low rumble
+                    },
+                    {
+                        filter: 'lowpass',
+                        options: ['f=3000'] // Focus on voice frequencies
+                    },
+                    {
+                        filter: 'equalizer',
+                        options: ['f=2500:width_type=h:width=1000:g=2'] // Enhance clarity
+                    }
+                );
+            }
+            
+            // 2. Then apply EQ
+            if (eqLowLevel !== null || eqMidLevel !== null || eqHighLevel !== null) {
+                const lowLevel = eqLowLevel !== null ? eqLowLevel : 0;
+                const midLevel = eqMidLevel !== null ? eqMidLevel : 0;
+                const highLevel = eqHighLevel !== null ? eqHighLevel : 0;
+                
+                orderedAudioFilters.push({
+                    filter: 'equalizer',
+                    options: [`f=100:width_type=o:width=2:g=${lowLevel}`] // Low frequencies
+                });
+                
+                orderedAudioFilters.push({
+                    filter: 'equalizer',
+                    options: [`f=1000:width_type=o:width=2:g=${midLevel}`] // Mid frequencies
+                });
+                
+                orderedAudioFilters.push({
+                    filter: 'equalizer',
+                    options: [`f=10000:width_type=o:width=2:g=${highLevel}`] // High frequencies
+                });
+            }
+            
+            // De-essing (after EQ)
+            if (deEssing !== null) {
+                orderedAudioFilters.push({
+                    filter: 'bandreject',
+                    options: [`f=6000:width_type=h:width=${500 + deEssing * 300}`]
+                });
+            }
+            
+            // 3. Dynamic processing
+            if (distortion !== null) {
+                const amount = distortion / 100;
+                const samples = Math.max(1, Math.min(250, 250 - (amount * 200)));
+                const bits = 8 - (amount * 4);
+                orderedAudioFilters.push({
+                    filter: 'acrusher', 
+                    options: [`samples=${Math.floor(samples)}:bits=${bits}:mode=log`]
+                });
+            }
+            
+            if (compression !== null) {
+                const threshold = Math.max(0.001, Math.min(1, 1 - (compression / 30)));
+                orderedAudioFilters.push({
+                    filter: 'acompressor',
+                    options: [`threshold=${threshold}:ratio=${3 + compression/10}:attack=20:release=100`]
+                });
+            }
+            
+            // 4. Creative effects
+            if (reverbLevel !== null) {
+                orderedAudioFilters.push({
+                    filter: 'aecho',
+                    options: [`0.8:0.9:${reverbLevel * 10}:0.5`]
+                });
+            }
+            
+            if (delayLevel !== null) {
+                orderedAudioFilters.push({
+                    filter: 'aecho',
+                    options: [`0.6:0.3:${delayLevel * 30}:0.5`]
+                });
+            }
+            
+            // Watermarking effect
+            if (applyWatermark) {
+                const watermarkFreq = 18000 + Math.random() * 2000;
+                orderedAudioFilters.push({
+                    filter: 'asin',
+                    options: [`frequency=${watermarkFreq}:sample_rate=44100:amplitude=0.005`]
+                });
+            }
+            
+            // 5. Speed/pitch adjustments last (they affect all previous effects)
+            // Pitch shifting (must come before speed adjustments)
+            if (pitchShift !== null) {
+                let sampleRate = 44100;
+                const audioStream = metadata.streams.find(stream => stream.codec_type === 'audio');
+                if (audioStream && audioStream.sample_rate) {
+                    sampleRate = parseInt(audioStream.sample_rate);
+                }
+                
+                const pitchFactor = Math.pow(2, pitchShift/12);
+                orderedAudioFilters.push({
+                    filter: 'asetrate',
+                    options: [`${sampleRate}*${pitchFactor}`]
+                });
+                
+                orderedAudioFilters.push({
+                    filter: 'aresample',
+                    options: [sampleRate]
+                });
+            }
+            
+            // Add speed adjustment filters last
+            if (speedMultiplier !== 1.0) {
+                if (speedMultiplier < 0.5) {
+                    const iterations = Math.ceil(Math.log(speedMultiplier) / Math.log(0.5));
+                    const iterationValue = Math.pow(speedMultiplier, 1/iterations);
+                    
+                    for (let i = 0; i < iterations; i++) {
+                        orderedAudioFilters.push({
+                            filter: 'atempo',
+                            options: [Math.max(0.5, iterationValue)]
+                        });
+                    }
+                } else if (speedMultiplier > 2.0) {
+                    const iterations = Math.ceil(Math.log(speedMultiplier) / Math.log(2.0));
+                    const iterationValue = Math.pow(speedMultiplier, 1/iterations);
+                    
+                    for (let i = 0; i < iterations; i++) {
+                        orderedAudioFilters.push({
+                            filter: 'atempo',
+                            options: [Math.min(2.0, iterationValue)]
+                        });
+                    }
+                } else {
+                    orderedAudioFilters.push({
+                        filter: 'atempo',
+                        options: [speedMultiplier]
+                    });
+                }
+            }
+            
+            // Apply the reordered filters
+            command.audioFilters(orderedAudioFilters);
 
             // Add metadata correctly - CHANGED: Use randomMetadata instead of metadata
             command
