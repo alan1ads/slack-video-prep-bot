@@ -202,53 +202,192 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                     '-threads 4',
                     '-preset ultrafast',
                     '-max_muxing_queue_size 1024',
-                    `-r ${adjustedFps}` // NEW CODE: Set the output frame rate
+                    `-r ${adjustedFps}`, // Set the output frame rate
+                    '-crf 28',          // Quality setting
+                    '-movflags +faststart' // Optimize for streaming
                 ]);
 
-            // Video and audio filters
-            command
-                .videoFilters([
-                    {
-                        filter: 'setpts',
-                        options: `${1/speedMultiplier}*PTS`
-                    },
-                    {
-                        filter: 'eq',
-                        options: `saturation=${saturation}:brightness=${brightness}:contrast=${contrast}`
-                    },
-                    // Add invisible mesh overlay - subtle grid pattern that's imperceptible
-                    {
-                        filter: 'drawgrid',
-                        options: `width=10:height=10:thickness=1:color=0x00000001`  // Nearly invisible grid
+            // Apply video filters
+            command.videoFilters([
+                {
+                    filter: 'setpts',
+                    options: `${1/speedMultiplier}*PTS` // Speed adjustment for video
+                },
+                {
+                    filter: 'eq',
+                    options: `saturation=${saturation}:brightness=${brightness}:contrast=${contrast}`
+                },
+                // Add invisible mesh overlay - subtle grid pattern that's imperceptible
+                {
+                    filter: 'drawgrid',
+                    options: `width=10:height=10:thickness=1:color=0x00000001` // Nearly invisible grid
+                }
+            ]);
+
+            // Create a clean array of audio filters with proper ordering
+            const audioFilters = [];
+            
+            // 1. FIRST: Basic cleanup and EQ
+            
+            // Noise reduction if needed
+            if (noiseReduction !== null && noiseReduction > 0) {
+                audioFilters.push({
+                    filter: 'highpass',
+                    options: [`f=${100 + noiseReduction * 10}`]
+                });
+            }
+            
+            // Voice enhancement (simplified to avoid filter chain complexity)
+            if (applyVoiceEnhancement) {
+                audioFilters.push({
+                    filter: 'equalizer',
+                    options: ['f=2500:width_type=h:width=1000:g=2'] // Enhance voice clarity
+                });
+            }
+            
+            // Apply EQ only if non-zero values provided
+            if (eqLowLevel !== null && eqLowLevel !== 0) {
+                audioFilters.push({
+                    filter: 'equalizer',
+                    options: [`f=100:width_type=o:width=2:g=${eqLowLevel}`] // Low frequencies
+                });
+            }
+            
+            if (eqMidLevel !== null && eqMidLevel !== 0) {
+                audioFilters.push({
+                    filter: 'equalizer',
+                    options: [`f=1000:width_type=o:width=2:g=${eqMidLevel}`] // Mid frequencies
+                });
+            }
+            
+            if (eqHighLevel !== null && eqHighLevel !== 0) {
+                audioFilters.push({
+                    filter: 'equalizer',
+                    options: [`f=10000:width_type=o:width=2:g=${eqHighLevel}`] // High frequencies
+                });
+            }
+            
+            // De-essing only if needed
+            if (deEssing !== null && deEssing > 0) {
+                audioFilters.push({
+                    filter: 'bandreject',
+                    options: [`f=6000:width_type=h:width=${500 + deEssing * 300}`]
+                });
+            }
+            
+            // 2. SECOND: Dynamic processing
+            
+            // Distortion/saturation
+            if (distortion !== null && distortion > 0) {
+                const amount = distortion / 100;
+                const samples = Math.max(1, Math.min(250, 250 - (amount * 200)));
+                const bits = Math.max(1, 8 - (amount * 4)); // Ensure bits is at least 1
+                audioFilters.push({
+                    filter: 'acrusher', 
+                    options: [`samples=${Math.floor(samples)}:bits=${bits}:mode=log`]
+                });
+            }
+            
+            // Compression/limiting
+            if (compression !== null && compression > 0) {
+                const threshold = Math.max(0.001, Math.min(1, 1 - (compression / 30)));
+                audioFilters.push({
+                    filter: 'acompressor',
+                    options: [`threshold=${threshold}:ratio=${3 + compression/10}:attack=20:release=100`]
+                });
+            }
+            
+            // 3. THIRD: Creative effects
+            
+            // Apply only ONE echo effect - either reverb or delay, whichever is stronger
+            if (reverbLevel !== null && reverbLevel > 0 && 
+                (delayLevel === null || reverbLevel >= delayLevel)) {
+                audioFilters.push({
+                    filter: 'aecho',
+                    options: [`0.8:0.9:${reverbLevel * 10}:0.5`] // Reverb effect
+                });
+            } else if (delayLevel !== null && delayLevel > 0) {
+                audioFilters.push({
+                    filter: 'aecho',
+                    options: [`0.6:0.3:${delayLevel * 30}:0.5`] // Delay/echo effect
+                });
+            }
+            
+            // Watermark if selected (using tremolo for compatibility)
+            if (applyWatermark) {
+                audioFilters.push({
+                    filter: 'tremolo',
+                    options: [`f=${10 + Math.random() * 5}:d=0.01`] // Very subtle tremolo
+                });
+            }
+            
+            // 4. LAST: Pitch shifting and speed adjustment
+            
+            // Pitch shifting
+            if (pitchShift !== null && pitchShift !== 0) {
+                // Simpler pitch shift with fixed sample rate
+                const pitchFactor = Math.pow(2, pitchShift/12);
+                audioFilters.push({
+                    filter: 'asetrate',
+                    options: [`44100*${pitchFactor}`]
+                });
+                audioFilters.push({
+                    filter: 'aresample',
+                    options: ['44100']
+                });
+            }
+            
+            // Speed adjustment - limited to 2 chained filters maximum
+            if (speedMultiplier !== 1.0) {
+                if (speedMultiplier <= 0.5) {
+                    // Extreme slowdown (max 2 filters)
+                    audioFilters.push({ filter: 'atempo', options: ['0.5'] });
+                    if (speedMultiplier <= 0.25) {
+                        audioFilters.push({ 
+                            filter: 'atempo', 
+                            options: [Math.max(0.5, speedMultiplier / 0.5)] 
+                        });
                     }
-                ])
-                .audioFilters([
-                    {
+                } else if (speedMultiplier >= 2.0) {
+                    // Extreme speedup (max 2 filters)
+                    audioFilters.push({ filter: 'atempo', options: ['2.0'] });
+                    if (speedMultiplier >= 4.0) {
+                        audioFilters.push({ 
+                            filter: 'atempo', 
+                            options: [Math.min(2.0, speedMultiplier / 2.0)] 
+                        });
+                    }
+                } else {
+                    // Normal range
+                    audioFilters.push({
                         filter: 'atempo',
                         options: [speedMultiplier]
-                    }
-                ]);
-
-            // Add metadata correctly - CHANGED: Use randomMetadata instead of metadata
+                    });
+                }
+            }
+            
+            // Apply the audio filters
+            if (audioFilters.length > 0) {
+                command.audioFilters(audioFilters);
+            }
+            
+            // Add metadata
             command
-            .addOutputOption('-metadata', `date=${randomMetadata.date}`)
-            .addOutputOption('-metadata', `year=${randomMetadata.year}`)
-            .addOutputOption('-metadata', `device_model=${randomMetadata.device_model}`)
-            .addOutputOption('-metadata', `encoder=${randomMetadata.encoder}`)
-            // Add new metadata fields
-            .addOutputOption('-metadata', `software=${randomMetadata.software}`)
-            .addOutputOption('-metadata', `resolution=${randomMetadata.resolution}`)
-            .addOutputOption('-metadata', `location=${randomMetadata.location}`)
-            .addOutputOption('-metadata', `gps=${randomMetadata.gps}`);
-
-            // Quality and optimization settings
-            command
-                .outputOptions([
-                    '-crf 28',
-                    '-movflags +faststart'
-                ]);
-
-            // Event handlers
+                .addOutputOption('-metadata', `date=${randomMetadata.date}`)
+                .addOutputOption('-metadata', `year=${randomMetadata.year}`)
+                .addOutputOption('-metadata', `device_model=${randomMetadata.device_model}`)
+                .addOutputOption('-metadata', `encoder=${randomMetadata.encoder}`)
+                .addOutputOption('-metadata', `software=${randomMetadata.software}`)
+                .addOutputOption('-metadata', `resolution=${randomMetadata.resolution}`)
+                .addOutputOption('-metadata', `location=${randomMetadata.location}`)
+                .addOutputOption('-metadata', `gps=${randomMetadata.gps}`)
+                .addOutputOption('-metadata', `audio_codec=${randomMetadata.audio_codec}`)
+                .addOutputOption('-metadata', `audio_sample_rate=${randomMetadata.audio_sample_rate}`)
+                .addOutputOption('-metadata', `audio_bit_rate=${randomMetadata.audio_bit_rate}`)
+                .addOutputOption('-metadata', `audio_equipment=${randomMetadata.audio_equipment}`)
+                .addOutputOption('-metadata', `audio_software=${randomMetadata.audio_software}`);
+            
+            // Event handlers for monitoring
             command.on('start', (commandLine) => {
                 console.log('FFmpeg command:', commandLine);
             });
@@ -262,12 +401,10 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
             command.on('error', (err, stdout, stderr) => {
                 console.error('FFmpeg error:', err);
                 
-                // Log detailed stderr information for debugging
                 if (stderr) {
                     console.error('FFmpeg stderr output:');
                     console.error(stderr);
                     
-                    // Check for common error patterns
                     if (stderr.includes('Error reinitializing filters')) {
                         console.error('Filter error detected. This might be due to incompatible filter combinations or invalid parameters.');
                     }
@@ -277,7 +414,6 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                     }
                 }
                 
-                // Create a more informative error with details
                 const enhancedError = new Error(`FFmpeg processing failed: ${err.message || 'Unknown error'}`);
                 enhancedError.originalError = err;
                 enhancedError.stderr = stderr;
@@ -290,373 +426,7 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                 resolve(outputPath);
             });
 
-            // Audio filters array
-            let audioFilters = [];
-            
-            // Always include speed adjustment
-            audioFilters.push({
-                filter: 'atempo',
-                options: [speedMultiplier]
-            });
-
-            // Handle speed adjustment with proper atempo limits (0.5-2.0)
-            if (speedMultiplier !== 1.0) {
-                if (speedMultiplier < 0.5) {
-                    // For extreme slowdowns, chain multiple atempo filters
-                    // Use 0.5 (the min value) multiple times
-                    const iterations = Math.ceil(Math.log(speedMultiplier) / Math.log(0.5));
-                    const iterationValue = Math.pow(speedMultiplier, 1/iterations);
-                    
-                    for (let i = 0; i < iterations; i++) {
-                        audioFilters.push({
-                            filter: 'atempo',
-                            options: [Math.max(0.5, iterationValue)]
-                        });
-                    }
-                } else if (speedMultiplier > 2.0) {
-                    // For extreme speedups, chain multiple atempo filters
-                    // Use 2.0 (the max value) multiple times
-                    const iterations = Math.ceil(Math.log(speedMultiplier) / Math.log(2.0));
-                    const iterationValue = Math.pow(speedMultiplier, 1/iterations);
-                    
-                    for (let i = 0; i < iterations; i++) {
-                        audioFilters.push({
-                            filter: 'atempo',
-                            options: [Math.min(2.0, iterationValue)]
-                        });
-                    }
-                } else {
-                    // Within normal range, use a single atempo filter
-                    audioFilters.push({
-                        filter: 'atempo',
-                        options: [speedMultiplier]
-                    });
-                }
-            }
-            
-            // Apply each requested audio filter if a value is provided
-            
-            // Reverb
-            if (reverbLevel !== null) {
-                audioFilters.push({
-                    filter: 'aecho',
-                    options: [`0.8:0.9:${reverbLevel * 10}:0.5`] // Adjust delay time based on level
-                });
-            }
-            
-            // Delay/Echo
-            if (delayLevel !== null) {
-                audioFilters.push({
-                    filter: 'aecho',
-                    options: [`0.6:0.3:${delayLevel * 30}:0.5`] // Different style of echo than reverb
-                });
-            }
-            
-            // Pitch Shift
-            if (pitchShift !== null) {
-                // Get audio sample rate from metadata
-                let sampleRate = 44100; // Default
-                const audioStream = metadata.streams.find(stream => stream.codec_type === 'audio');
-                if (audioStream && audioStream.sample_rate) {
-                    sampleRate = parseInt(audioStream.sample_rate);
-                }
-                
-                // Calculate pitch shift using the actual sample rate
-                const pitchFactor = Math.pow(2, pitchShift/12);
-                audioFilters.push({
-                    filter: 'asetrate',
-                    options: [`${sampleRate}*${pitchFactor}`] // Convert semitones to frequency ratio
-                });
-                
-                // Resample back to original rate to avoid speed changes
-                audioFilters.push({
-                    filter: 'aresample',
-                    options: [sampleRate]
-                });
-            }
-            
-            // Distortion/Saturation
-            if (distortion !== null) {
-                const amount = distortion / 100;
-                // Map distortion amount to valid sample range (1-250)
-                const samples = Math.max(1, Math.min(250, 250 - (amount * 200)));
-                const bits = 8 - (amount * 4);
-                audioFilters.push({
-                    filter: 'acrusher', 
-                    options: [`samples=${Math.floor(samples)}:bits=${bits}:mode=log`]
-                });
-            }
-            
-            // Noise Reduction (simplified version using highpass filter)
-            if (noiseReduction !== null) {
-                audioFilters.push({
-                    filter: 'highpass',
-                    options: [`f=${100 + noiseReduction * 10}`] // Higher cutoff for more reduction
-                });
-            }
-            
-            // Equalization (3-band EQ)
-            if (eqLowLevel !== null || eqMidLevel !== null || eqHighLevel !== null) {
-                const lowLevel = eqLowLevel !== null ? eqLowLevel : 0;
-                const midLevel = eqMidLevel !== null ? eqMidLevel : 0;
-                const highLevel = eqHighLevel !== null ? eqHighLevel : 0;
-                
-                audioFilters.push({
-                    filter: 'equalizer',
-                    options: [`f=100:width_type=o:width=2:g=${lowLevel}`] // Low frequencies
-                });
-                
-                audioFilters.push({
-                    filter: 'equalizer',
-                    options: [`f=1000:width_type=o:width=2:g=${midLevel}`] // Mid frequencies
-                });
-                
-                audioFilters.push({
-                    filter: 'equalizer',
-                    options: [`f=10000:width_type=o:width=2:g=${highLevel}`] // High frequencies
-                });
-            }
-            
-            // Compression/Limiting
-            if (compression !== null) {
-                // Convert compression level (0-30) to threshold (0.001-1)
-                // Higher compression = lower threshold
-                const threshold = Math.max(0.001, Math.min(1, 1 - (compression / 30)));
-                audioFilters.push({
-                    filter: 'acompressor',
-                    options: [`threshold=${threshold}:ratio=${3 + compression/10}:attack=20:release=100`]
-                });
-            }
-            
-            // De-essing (simplified using a band stop filter around sibilance frequencies)
-            if (deEssing !== null) {
-                audioFilters.push({
-                    filter: 'bandreject',
-                    options: [`f=6000:width_type=h:width=${500 + deEssing * 300}`]
-                });
-            }
-            
-            // Apply Voice Enhancement (if randomly selected)
-            if (applyVoiceEnhancement) {
-                audioFilters.push(
-                    {
-                        filter: 'highpass',
-                        options: ['f=200'] // Remove low rumble
-                    },
-                    {
-                        filter: 'lowpass',
-                        options: ['f=3000'] // Focus on voice frequencies
-                    },
-                    {
-                        filter: 'equalizer',
-                        options: ['f=2500:width_type=h:width=1000:g=2'] // Enhance clarity
-                    }
-                );
-            }
-            
-            // Apply Audio Watermarking (if randomly selected)
-            if (applyWatermark) {
-                // Instead of asin filter, use a subtle tremolo effect as a watermark
-                // This creates a subtle amplitude variation that's barely perceptible
-                audioFilters.push({
-                    filter: 'tremolo',
-                    options: [`f=${10 + Math.random() * 5}:d=0.01`] // Very subtle tremolo
-                });
-            }
-            
-            // Apply all audio filters
-            command.audioFilters(audioFilters);
-
-            // Apply all audio filters in optimal order:
-            // 1. Noise reduction first (clean the audio)
-            // 2. EQ and basic processing
-            // 3. Dynamic processing (compression)
-            // 4. Creative effects (reverb, delay)
-            // 5. Speed/pitch adjustments last
-            
-            let orderedAudioFilters = [];
-            
-            // 1. First apply noise reduction and cleanup
-            if (noiseReduction !== null) {
-                orderedAudioFilters.push({
-                    filter: 'highpass',
-                    options: [`f=${100 + noiseReduction * 10}`]
-                });
-            }
-            
-            // Apply Voice Enhancement early in the chain if selected
-            if (applyVoiceEnhancement) {
-                orderedAudioFilters.push(
-                    {
-                        filter: 'highpass',
-                        options: ['f=200'] // Remove low rumble
-                    },
-                    {
-                        filter: 'lowpass',
-                        options: ['f=3000'] // Focus on voice frequencies
-                    },
-                    {
-                        filter: 'equalizer',
-                        options: ['f=2500:width_type=h:width=1000:g=2'] // Enhance clarity
-                    }
-                );
-            }
-            
-            // 2. Then apply EQ
-            if (eqLowLevel !== null || eqMidLevel !== null || eqHighLevel !== null) {
-                const lowLevel = eqLowLevel !== null ? eqLowLevel : 0;
-                const midLevel = eqMidLevel !== null ? eqMidLevel : 0;
-                const highLevel = eqHighLevel !== null ? eqHighLevel : 0;
-                
-                orderedAudioFilters.push({
-                    filter: 'equalizer',
-                    options: [`f=100:width_type=o:width=2:g=${lowLevel}`] // Low frequencies
-                });
-                
-                orderedAudioFilters.push({
-                    filter: 'equalizer',
-                    options: [`f=1000:width_type=o:width=2:g=${midLevel}`] // Mid frequencies
-                });
-                
-                orderedAudioFilters.push({
-                    filter: 'equalizer',
-                    options: [`f=10000:width_type=o:width=2:g=${highLevel}`] // High frequencies
-                });
-            }
-            
-            // De-essing (after EQ)
-            if (deEssing !== null) {
-                orderedAudioFilters.push({
-                    filter: 'bandreject',
-                    options: [`f=6000:width_type=h:width=${500 + deEssing * 300}`]
-                });
-            }
-            
-            // 3. Dynamic processing
-            if (distortion !== null) {
-                const amount = distortion / 100;
-                const samples = Math.max(1, Math.min(250, 250 - (amount * 200)));
-                const bits = 8 - (amount * 4);
-                orderedAudioFilters.push({
-                    filter: 'acrusher', 
-                    options: [`samples=${Math.floor(samples)}:bits=${bits}:mode=log`]
-                });
-            }
-            
-            if (compression !== null) {
-                const threshold = Math.max(0.001, Math.min(1, 1 - (compression / 30)));
-                orderedAudioFilters.push({
-                    filter: 'acompressor',
-                    options: [`threshold=${threshold}:ratio=${3 + compression/10}:attack=20:release=100`]
-                });
-            }
-            
-            // 4. Creative effects
-            if (reverbLevel !== null) {
-                orderedAudioFilters.push({
-                    filter: 'aecho',
-                    options: [`0.8:0.9:${reverbLevel * 10}:0.5`]
-                });
-            }
-            
-            if (delayLevel !== null) {
-                orderedAudioFilters.push({
-                    filter: 'aecho',
-                    options: [`0.6:0.3:${delayLevel * 30}:0.5`]
-                });
-            }
-            
-            // 5. Speed/pitch adjustments last (they affect all previous effects)
-            // Pitch shifting (must come before speed adjustments)
-            if (pitchShift !== null) {
-                let sampleRate = 44100;
-                const audioStream = metadata.streams.find(stream => stream.codec_type === 'audio');
-                if (audioStream && audioStream.sample_rate) {
-                    sampleRate = parseInt(audioStream.sample_rate);
-                }
-                
-                const pitchFactor = Math.pow(2, pitchShift/12);
-                orderedAudioFilters.push({
-                    filter: 'asetrate',
-                    options: [`${sampleRate}*${pitchFactor}`]
-                });
-                
-                orderedAudioFilters.push({
-                    filter: 'aresample',
-                    options: [sampleRate]
-                });
-            }
-            
-            // Add speed adjustment filters last
-            if (speedMultiplier !== 1.0) {
-                if (speedMultiplier < 0.5) {
-                    const iterations = Math.ceil(Math.log(speedMultiplier) / Math.log(0.5));
-                    const iterationValue = Math.pow(speedMultiplier, 1/iterations);
-                    
-                    for (let i = 0; i < iterations; i++) {
-                        orderedAudioFilters.push({
-                            filter: 'atempo',
-                            options: [Math.max(0.5, iterationValue)]
-                        });
-                    }
-                } else if (speedMultiplier > 2.0) {
-                    const iterations = Math.ceil(Math.log(speedMultiplier) / Math.log(2.0));
-                    const iterationValue = Math.pow(speedMultiplier, 1/iterations);
-                    
-                    for (let i = 0; i < iterations; i++) {
-                        orderedAudioFilters.push({
-                            filter: 'atempo',
-                            options: [Math.min(2.0, iterationValue)]
-                        });
-                    }
-                } else {
-                    orderedAudioFilters.push({
-                        filter: 'atempo',
-                        options: [speedMultiplier]
-                    });
-                }
-            }
-            
-            // Watermarking effect
-            if (applyWatermark) {
-                const watermarkFreq = 18000 + Math.random() * 2000;
-                orderedAudioFilters.push({
-                    filter: 'asin',
-                    options: [`frequency=${watermarkFreq}:sample_rate=44100:amplitude=0.005`]
-                });
-            }
-
-            // Watermarking effect
-            if (applyWatermark) {
-                // Use tremolo as a subtle watermark instead of asin
-                orderedAudioFilters.push({
-                    filter: 'tremolo',
-                    options: [`f=${10 + Math.random() * 5}:d=0.01`] // Very subtle tremolo
-                });
-            }
-            
-            // Apply the reordered filters
-            command.audioFilters(orderedAudioFilters);
-
-            // Add metadata correctly - CHANGED: Use randomMetadata instead of metadata
-            command
-            .addOutputOption('-metadata', `date=${randomMetadata.date}`)
-            .addOutputOption('-metadata', `year=${randomMetadata.year}`)
-            .addOutputOption('-metadata', `device_model=${randomMetadata.device_model}`)
-            .addOutputOption('-metadata', `encoder=${randomMetadata.encoder}`)
-            // Add video metadata fields
-            .addOutputOption('-metadata', `software=${randomMetadata.software}`)
-            .addOutputOption('-metadata', `resolution=${randomMetadata.resolution}`)
-            .addOutputOption('-metadata', `location=${randomMetadata.location}`)
-            .addOutputOption('-metadata', `gps=${randomMetadata.gps}`)
-            // Add new audio metadata
-            .addOutputOption('-metadata', `audio_codec=${randomMetadata.audio_codec}`)
-            .addOutputOption('-metadata', `audio_sample_rate=${randomMetadata.audio_sample_rate}`)
-            .addOutputOption('-metadata', `audio_bit_rate=${randomMetadata.audio_bit_rate}`)
-            .addOutputOption('-metadata', `audio_equipment=${randomMetadata.audio_equipment}`)
-            .addOutputOption('-metadata', `audio_software=${randomMetadata.audio_software}`);
-
-            // Start processing
+            // Start the processing
             command.save(outputPath);
         }); // NEW CODE: Close the ffprobe callback
     });
