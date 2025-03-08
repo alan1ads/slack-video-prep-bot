@@ -456,13 +456,11 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
             
             // Apply Audio Watermarking (if randomly selected)
             if (applyWatermark) {
-                // Generate unique identifier (timestamp-based)
-                const timestamp = Date.now().toString(36);
-                const watermarkFreq = 18000 + Math.random() * 2000; // Near-ultrasonic frequency
-                
+                // Instead of asin filter, use a subtle tremolo effect as a watermark
+                // This creates a subtle amplitude variation that's barely perceptible
                 audioFilters.push({
-                    filter: 'asin',
-                    options: [`frequency=${watermarkFreq}:sample_rate=44100:amplitude=0.005`] // Very quiet sine wave
+                    filter: 'tremolo',
+                    options: [`f=${10 + Math.random() * 5}:d=0.01`] // Very subtle tremolo
                 });
             }
             
@@ -568,15 +566,6 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                 });
             }
             
-            // Watermarking effect
-            if (applyWatermark) {
-                const watermarkFreq = 18000 + Math.random() * 2000;
-                orderedAudioFilters.push({
-                    filter: 'asin',
-                    options: [`frequency=${watermarkFreq}:sample_rate=44100:amplitude=0.005`]
-                });
-            }
-            
             // 5. Speed/pitch adjustments last (they affect all previous effects)
             // Pitch shifting (must come before speed adjustments)
             if (pitchShift !== null) {
@@ -626,6 +615,24 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                         options: [speedMultiplier]
                     });
                 }
+            }
+            
+            // Watermarking effect
+            if (applyWatermark) {
+                const watermarkFreq = 18000 + Math.random() * 2000;
+                orderedAudioFilters.push({
+                    filter: 'asin',
+                    options: [`frequency=${watermarkFreq}:sample_rate=44100:amplitude=0.005`]
+                });
+            }
+
+            // Watermarking effect
+            if (applyWatermark) {
+                // Use tremolo as a subtle watermark instead of asin
+                orderedAudioFilters.push({
+                    filter: 'tremolo',
+                    options: [`f=${10 + Math.random() * 5}:d=0.01`] // Very subtle tremolo
+                });
             }
             
             // Apply the reordered filters
