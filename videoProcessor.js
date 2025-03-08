@@ -308,9 +308,12 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
             // Distortion/Saturation
             if (distortion !== null) {
                 const amount = distortion / 100;
+                // Map distortion amount to valid sample range (1-250)
+                const samples = Math.max(1, Math.min(250, 250 - (amount * 200)));
+                const bits = 8 - (amount * 4);
                 audioFilters.push({
                     filter: 'acrusher', 
-                    options: [`samples=${4000-3000*amount}:bits=${8-4*amount}:mode=log`]
+                    options: [`samples=${Math.floor(samples)}:bits=${bits}:mode=log`]
                 });
             }
             
