@@ -2,7 +2,7 @@ const { App } = require('@slack/bolt');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const { processVideo } = require('./videoProcessor');
+const { processVideo, applyRehash } = require('./videoProcessor');
 const https = require('https');
 require('dotenv').config();
 
@@ -20,14 +20,17 @@ const app = new App({
 // Create temp directories
 const inputDir = path.join(__dirname, 'temp', 'input');
 const outputDir = path.join(__dirname, 'temp', 'output');
+const overlaysDir = path.join(__dirname, 'overlays');
 
 // Create temp directories with error handling
 try {
     fs.mkdirSync(inputDir, { recursive: true });
     fs.mkdirSync(outputDir, { recursive: true });
+    fs.mkdirSync(overlaysDir, { recursive: true });
     console.log('Temp directories created/verified:');
     console.log('Input directory:', inputDir);
     console.log('Output directory:', outputDir);
+    console.log('Overlays directory:', overlaysDir);
 } catch (error) {
     console.error('Error creating temp directories:', error);
 }
@@ -502,6 +505,40 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
                                 text: '*Note:* Voice Enhancement and Audio Watermarking will be applied randomly. Audio metadata will be generated automatically.'
                             }
                         ]
+                    },
+                    // After the random_mode block, add this:
+                    {
+                        type: 'input',
+                        block_id: 'apply_rehash',
+                        optional: true,
+                        element: {
+                            type: 'checkboxes',
+                            action_id: 'rehash_checkbox',
+                            options: [
+                                {
+                                    text: {
+                                        type: 'plain_text',
+                                        text: 'Apply video rehash (frame swapping, pitch adjustment)',
+                                        emoji: true
+                                    },
+                                    value: 'rehash'
+                                }
+                            ]
+                        },
+                        label: {
+                            type: 'plain_text',
+                            text: 'Video Rehashing',
+                            emoji: true
+                        }
+                    },
+                    {
+                        type: 'context',
+                        elements: [
+                            {
+                                type: 'mrkdwn',
+                                text: 'The rehash feature swaps frames in the middle section of the video and slightly adjusts audio pitch to help videos avoid automated detection systems.'
+                            }
+                        ]
                     }
                 ],
                 private_metadata: body.channel.id
@@ -543,6 +580,14 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
     let eqHighLevel = null;
     let compression = null;
     let deEssing = null;
+    
+    // Check if rehash is requested
+    const applyRehashOption = view.state.values.apply_rehash?.rehash_checkbox?.selected_options || [];
+    const shouldRehash = applyRehashOption.some(option => option.value === 'rehash');
+    
+    if (shouldRehash) {
+        console.log('Video rehashing is enabled');
+    }
     
     // If random mode is enabled, use random values
     if (useRandomMode) {
@@ -672,6 +717,7 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
 
                 // Process - passing fpsAdjustment as an additional parameter
                 try {
+                    // First apply standard processing
                     await processVideo(
                         inputPath, 
                         outputPath, 
@@ -693,6 +739,18 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
                         deEssing
                     );
                     console.log('Processing completed for:', videoInfo.file.name);
+                    
+                    // If rehash is enabled, apply it as a second pass
+                    if (shouldRehash) {
+                        console.log('Applying rehash to:', videoInfo.file.name);
+                        const rehashOutputPath = path.join(outputDir, `rehash_${videoInfo.file_id}.mp4`);
+                        await applyRehash(outputPath, rehashOutputPath, overlaysDir);
+                        
+                        // Replace the output path with the rehashed version
+                        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+                        fs.renameSync(rehashOutputPath, outputPath);
+                        console.log('Rehash completed for:', videoInfo.file.name);
+                    }
 
                     // Upload
                     await client.files.uploadV2({
