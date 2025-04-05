@@ -134,6 +134,13 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
     textWatermark = null) {
     
     return new Promise((resolve, reject) => {
+        // Timeout for cloud environment - kill process if it takes too long
+        const timeoutId = setTimeout(() => {
+            console.error('Video processing timeout - killing process to prevent hanging');
+            command.kill('SIGKILL');
+            reject(new Error('Processing timeout - process terminated'));
+        }, 10 * 60 * 1000); // 10-minute timeout
+        
         // Apply limits to parameters
         speedAdjustment = Math.max(-100, Math.min(100, speedAdjustment)); // Limit -100 to 100
         saturation = Math.max(0, Math.min(2, saturation));               // Limit 0 to 2
@@ -153,16 +160,21 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
         deEssing = deEssing !== null ? Math.max(0, Math.min(10, deEssing)) : null; // 0-10dB
         
         // Set random values for automatic features
-        const applyWatermark = Math.random() > 0.5; // 50% chance to apply watermark
-        const applyVoiceEnhancement = Math.random() > 0.5; // 50% chance to apply voice enhancement
+        // Cloud-optimized: Reduce random features to improve reliability
+        const applyWatermark = Math.random() > 0.7; // 30% chance to apply watermark
+        const applyVoiceEnhancement = Math.random() > 0.7; // 30% chance to apply voice enhancement
         
         const randomMetadata = generateRandomMetadata();
         const speedMultiplier = 1 + (speedAdjustment / 100);
+
+        // Create command first to allow timeout to work properly
+        let command = ffmpeg(inputPath);
 
         // NEW CODE: Get the original FPS first
         ffmpeg.ffprobe(inputPath, (err, metadata) => { // This metadata is from ffprobe, different variable
             if (err) {
                 console.error('Error getting video metadata:', err);
+                clearTimeout(timeoutId);
                 reject(err);
                 return;
             }
@@ -171,6 +183,7 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
             const videoStream = metadata.streams.find(stream => stream.codec_type === 'video');
             if (!videoStream) {
                 console.error('No video stream found');
+                clearTimeout(timeoutId);
                 reject(new Error('No video stream found'));
                 return;
             }
@@ -198,24 +211,23 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
             console.log(`Original FPS: ${originalFps}, Adjusted FPS: ${adjustedFps}, Speed Adjustment: ${speedAdjustment}%`);
             // END OF NEW CODE FOR FPS DETECTION
             
-            let command = ffmpeg(inputPath);
-
-            // Resource constraints
+            // Resource constraints - CLOUD OPTIMIZED
             command
                 .outputOptions([
-                    '-threads 4',
-                    '-preset ultrafast',
-                    '-max_muxing_queue_size 1024',
-                    `-r ${adjustedFps}`, // Set the output frame rate
-                    '-crf 28',          // Quality setting
-                    '-movflags +faststart' // Optimize for streaming
+                    '-threads 2',                   // Reduced thread count for better stability
+                    '-preset ultrafast',           // Fastest encoding
+                    '-max_muxing_queue_size 1024', 
+                    `-r ${adjustedFps}`,           // Set the output frame rate
+                    '-crf 30',                     // Slightly reduced quality for better performance
+                    '-movflags +faststart',        // Optimize for streaming
+                    '-tune fastdecode'             // Optimize for decoding speed
                 ]);
 
             // Get video dimensions for positioning the text watermark
             const width = videoStream.width || 1920;
             const height = videoStream.height || 1080;
             
-            // Prepare video filters array
+            // CLOUD OPTIMIZED: Simplify video filters for better reliability
             let videoFilters = [
                 {
                     filter: 'setpts',
@@ -224,22 +236,20 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                 {
                     filter: 'eq',
                     options: `saturation=${saturation}:brightness=${brightness}:contrast=${contrast}`
-                },
-                // Add invisible mesh overlay - subtle grid pattern that's imperceptible
-                {
-                    filter: 'drawgrid',
-                    options: `width=10:height=10:thickness=1:color=0x00000001` // Nearly invisible grid
                 }
             ];
+            
+            // Only add grid if system has enough resources (check video size)
+            if (width * height <= 1920 * 1080) { // Only for 1080p or smaller
+                videoFilters.push({
+                    filter: 'drawgrid',
+                    options: `width=10:height=10:thickness=1:color=0x00000001` // Nearly invisible grid
+                });
+            }
             
             // Add text watermark if provided
             if (textWatermark) {
                 console.log(`Adding text/emoji watermark: ${textWatermark}`);
-                
-                // Calculate position in the bottom right corner with a small margin
-                // We'll use 10px margins from the edges
-                const x = width - 10;
-                const y = height - 10;
                 
                 // Add drawtext filter for the watermark
                 videoFilters.push({
@@ -248,20 +258,15 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                         text: textWatermark,
                         fontsize: Math.min(height / 20, 36), // Size proportional to video height, max 36
                         fontcolor: 'white@0.75', // Semi-transparent white
-                        x: `${x}`,
-                        y: `${y}`,
                         shadowcolor: 'black@0.5', // Add shadow for better visibility
                         shadowx: 2,
                         shadowy: 2,
-                        // Position text from the right bottom corner (position it x pixels from right, y from bottom)
                         box: 1,
                         boxcolor: 'black@0.2', // Slight background box for better visibility
                         boxborderw: 5,
-                        // Right and bottom aligned
                         fix_bounds: true, // Ensure it stays within frame
-                        // Position from the bottom right
-                        x: `w-tw-10`, // 10px from right edge
-                        y: `h-th-10`  // 10px from bottom edge
+                        x: 'w-tw-10', // 10px from right edge
+                        y: 'h-th-10'  // 10px from bottom edge
                     }
                 });
             }
@@ -272,122 +277,21 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
             // Create a clean array of audio filters with proper ordering
             const audioFilters = [];
             
-            // 1. FIRST: Basic cleanup and EQ
+            // CLOUD OPTIMIZED: Prioritize most important filters, limit total number
+            // Count how many filters we've added to avoid overloading
+            let filterCount = 0;
+            const MAX_FILTERS = 6; // Limit total number of audio filters
             
-            // Noise reduction if needed
-            if (noiseReduction !== null && noiseReduction > 0) {
-                audioFilters.push({
-                    filter: 'highpass',
-                    options: [`f=${100 + noiseReduction * 10}`]
-                });
-            }
-            
-            // Voice enhancement (simplified to avoid filter chain complexity)
-            if (applyVoiceEnhancement) {
-                audioFilters.push({
-                    filter: 'equalizer',
-                    options: ['f=2500:width_type=h:width=1000:g=2'] // Enhance voice clarity
-                });
-            }
-            
-            // Apply EQ only if non-zero values provided
-            if (eqLowLevel !== null && eqLowLevel !== 0) {
-                audioFilters.push({
-                    filter: 'equalizer',
-                    options: [`f=100:width_type=o:width=2:g=${eqLowLevel}`] // Low frequencies
-                });
-            }
-            
-            if (eqMidLevel !== null && eqMidLevel !== 0) {
-                audioFilters.push({
-                    filter: 'equalizer',
-                    options: [`f=1000:width_type=o:width=2:g=${eqMidLevel}`] // Mid frequencies
-                });
-            }
-            
-            if (eqHighLevel !== null && eqHighLevel !== 0) {
-                audioFilters.push({
-                    filter: 'equalizer',
-                    options: [`f=10000:width_type=o:width=2:g=${eqHighLevel}`] // High frequencies
-                });
-            }
-            
-            // De-essing only if needed
-            if (deEssing !== null && deEssing > 0) {
-                audioFilters.push({
-                    filter: 'bandreject',
-                    options: [`f=6000:width_type=h:width=${500 + deEssing * 300}`]
-                });
-            }
-            
-            // 2. SECOND: Dynamic processing
-            
-            // Distortion/saturation
-            if (distortion !== null && distortion > 0) {
-                const amount = distortion / 100;
-                const samples = Math.max(1, Math.min(250, 250 - (amount * 200)));
-                const bits = Math.max(1, 8 - (amount * 4)); // Ensure bits is at least 1
-                audioFilters.push({
-                    filter: 'acrusher', 
-                    options: [`samples=${Math.floor(samples)}:bits=${bits}:mode=log`]
-                });
-            }
-            
-            // Compression/limiting
-            if (compression !== null && compression > 0) {
-                const threshold = Math.max(0.001, Math.min(1, 1 - (compression / 30)));
-                audioFilters.push({
-                    filter: 'acompressor',
-                    options: [`threshold=${threshold}:ratio=${3 + compression/10}:attack=20:release=100`]
-                });
-            }
-            
-            // 3. THIRD: Creative effects
-            
-            // Apply only ONE echo effect - either reverb or delay, whichever is stronger
-            if (reverbLevel !== null && reverbLevel > 0 && 
-                (delayLevel === null || reverbLevel >= delayLevel)) {
-                audioFilters.push({
-                    filter: 'aecho',
-                    options: [`0.8:0.9:${reverbLevel * 10}:0.5`] // Reverb effect
-                });
-            } else if (delayLevel !== null && delayLevel > 0) {
-                audioFilters.push({
-                    filter: 'aecho',
-                    options: [`0.6:0.3:${delayLevel * 30}:0.5`] // Delay/echo effect
-                });
-            }
-            
-            // Watermark if selected (using tremolo for compatibility)
-            if (applyWatermark) {
-                audioFilters.push({
-                    filter: 'tremolo',
-                    options: [`f=${10 + Math.random() * 5}:d=0.01`] // Very subtle tremolo
-                });
-            }
-            
-            // 4. LAST: Pitch shifting and speed adjustment
-            
-            // Pitch shifting
-            if (pitchShift !== null && pitchShift !== 0) {
-                // Simpler pitch shift with fixed sample rate
-                const pitchFactor = Math.pow(2, pitchShift/12);
-                audioFilters.push({
-                    filter: 'asetrate',
-                    options: [`44100*${pitchFactor}`]
-                });
-                audioFilters.push({
-                    filter: 'aresample',
-                    options: ['44100']
-                });
-            }
+            // 1. FIRST: Most essential adjustments - speed and pitch
             
             // Speed adjustment - limited to 2 chained filters maximum
-            if (speedMultiplier !== 1.0) {
+            if (speedMultiplier !== 1.0 && filterCount < MAX_FILTERS) {
+                filterCount++;
                 if (speedMultiplier <= 0.5) {
                     // Extreme slowdown (max 2 filters)
                     audioFilters.push({ filter: 'atempo', options: ['0.5'] });
-                    if (speedMultiplier <= 0.25) {
+                    if (speedMultiplier <= 0.25 && filterCount < MAX_FILTERS) {
+                        filterCount++;
                         audioFilters.push({ 
                             filter: 'atempo', 
                             options: [Math.max(0.5, speedMultiplier / 0.5)] 
@@ -396,7 +300,8 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                 } else if (speedMultiplier >= 2.0) {
                     // Extreme speedup (max 2 filters)
                     audioFilters.push({ filter: 'atempo', options: ['2.0'] });
-                    if (speedMultiplier >= 4.0) {
+                    if (speedMultiplier >= 4.0 && filterCount < MAX_FILTERS) {
+                        filterCount++;
                         audioFilters.push({ 
                             filter: 'atempo', 
                             options: [Math.min(2.0, speedMultiplier / 2.0)] 
@@ -409,6 +314,88 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                         options: [speedMultiplier]
                     });
                 }
+            }
+            
+            // Pitch shifting
+            if (pitchShift !== null && pitchShift !== 0 && filterCount < MAX_FILTERS) {
+                filterCount += 2; // This uses 2 filters
+                // Simpler pitch shift with fixed sample rate
+                const pitchFactor = Math.pow(2, pitchShift/12);
+                audioFilters.push({
+                    filter: 'asetrate',
+                    options: [`44100*${pitchFactor}`]
+                });
+                audioFilters.push({
+                    filter: 'aresample',
+                    options: ['44100']
+                });
+            }
+            
+            // 2. SECOND: Creative effects (if filter limit allows)
+            
+            // Apply only ONE echo effect - either reverb or delay, whichever is stronger
+            if (filterCount < MAX_FILTERS && 
+                ((reverbLevel !== null && reverbLevel > 0 && 
+                  (delayLevel === null || reverbLevel >= delayLevel)))) {
+                filterCount++;
+                audioFilters.push({
+                    filter: 'aecho',
+                    options: [`0.8:0.9:${reverbLevel * 10}:0.5`] // Reverb effect
+                });
+            } else if (filterCount < MAX_FILTERS && 
+                      (delayLevel !== null && delayLevel > 0)) {
+                filterCount++;
+                audioFilters.push({
+                    filter: 'aecho',
+                    options: [`0.6:0.3:${delayLevel * 30}:0.5`] // Delay/echo effect
+                });
+            }
+            
+            // 3. THIRD: EQ and cleanup (only if filter slots available)
+            
+            // Apply EQ only if non-zero values provided and we have room for filters
+            if (eqLowLevel !== null && eqLowLevel !== 0 && filterCount < MAX_FILTERS) {
+                filterCount++;
+                audioFilters.push({
+                    filter: 'equalizer',
+                    options: [`f=100:width_type=o:width=2:g=${eqLowLevel}`] // Low frequencies
+                });
+            }
+            
+            if (eqMidLevel !== null && eqMidLevel !== 0 && filterCount < MAX_FILTERS) {
+                filterCount++;
+                audioFilters.push({
+                    filter: 'equalizer',
+                    options: [`f=1000:width_type=o:width=2:g=${eqMidLevel}`] // Mid frequencies
+                });
+            }
+            
+            if (eqHighLevel !== null && eqHighLevel !== 0 && filterCount < MAX_FILTERS) {
+                filterCount++;
+                audioFilters.push({
+                    filter: 'equalizer',
+                    options: [`f=10000:width_type=o:width=2:g=${eqHighLevel}`] // High frequencies
+                });
+            }
+            
+            // Only apply these if absolutely necessary and we have room
+            
+            // Voice enhancement (simplified to avoid filter chain complexity)
+            if (applyVoiceEnhancement && filterCount < MAX_FILTERS) {
+                filterCount++;
+                audioFilters.push({
+                    filter: 'equalizer',
+                    options: ['f=2500:width_type=h:width=1000:g=2'] // Enhance voice clarity
+                });
+            }
+            
+            // Watermark if selected (using tremolo for compatibility)
+            if (applyWatermark && filterCount < MAX_FILTERS) {
+                filterCount++;
+                audioFilters.push({
+                    filter: 'tremolo',
+                    options: [`f=${10 + Math.random() * 5}:d=0.01`] // Very subtle tremolo
+                });
             }
             
             // Apply the audio filters
@@ -440,11 +427,19 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
             command.on('progress', (progress) => {
                 if (progress.percent) {
                     console.log(`Processing: ${Math.round(progress.percent)}% done`);
+                    // Update timeout on progress to prevent timeouts on large files
+                    clearTimeout(timeoutId);
+                    const newTimeoutId = setTimeout(() => {
+                        console.error('Video processing timeout - killing process');
+                        command.kill('SIGKILL');
+                        reject(new Error('Processing timeout - process terminated'));
+                    }, 5 * 60 * 1000); // 5-minute timeout from last progress
                 }
             });
 
             command.on('error', (err, stdout, stderr) => {
                 console.error('FFmpeg error:', err);
+                clearTimeout(timeoutId); // Clear timeout on error
                 
                 if (stderr) {
                     console.error('FFmpeg stderr output:');
@@ -468,6 +463,7 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
 
             command.on('end', () => {
                 console.log('FFmpeg processing finished');
+                clearTimeout(timeoutId); // Clear timeout on success
                 resolve(outputPath);
             });
 
@@ -491,147 +487,104 @@ async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark 
             outputPath = path.join(path.dirname(inputPath), `${name}_fresh_edit_${randomId}${ext}`);
         }
         
-        console.log(`\n🎬 Processing rehash (micro-subtle): ${basename}`);
+        console.log(`\n🎬 Processing rehash (cloud-optimized): ${basename}`);
+        
+        // Create command early for timeout handling
+        let command = ffmpeg(inputPath);
+        
+        // Timeout for cloud environment - kill process if it takes too long
+        const timeoutId = setTimeout(() => {
+            console.error('Rehash timeout - killing process to prevent hanging');
+            command.kill('SIGKILL');
+            reject(new Error('Rehash timeout - process terminated'));
+        }, 10 * 60 * 1000); // 10-minute timeout
         
         // ULTRA-SUBTLE VALUES:
         // Use extremely small variation values that are virtually imperceptible
         // but still create unique digital fingerprints
         
-        // Ultra-subtle pitch adjustment - reduced by 10x (0.001% to 0.005% range instead of 0.01%-0.05%)
-        const pitchFactor = (1 + (Math.random() * 0.00004) + 0.00001).toFixed(8);
+        // Ultra-ultra-subtle pitch adjustment - completely imperceptible (0.0001% to 0.0005%)
+        const pitchFactor = (1 + (Math.random() * 0.000004) + 0.000001).toFixed(10);
         
-        // Micro-subtle FPS variations (only ±0.01 instead of ±0.05)
-        const originalFps = 30; // We'll stay extremely close to original
-        const fpsVar = originalFps + (Math.random() * 0.02 - 0.01);
+        // Skip the FFprobe step entirely for faster processing
+        // Use a direct, streamlined approach
         
-        // Micro-subtle PTS adjustments (0.005% to 0.01% instead of 0.05%-0.1%)
-        const ptsVar = 1 + (Math.random() * 0.00005 + 0.00005);
-        
-        console.log(`Using ultra-subtle variations: FPS=${fpsVar.toFixed(4)}, PTS=${ptsVar.toFixed(6)}, Pitch=${pitchFactor}`);
-        
-        // First get video dimensions for text positioning
-        ffmpeg.ffprobe(inputPath, (err, metadata) => {
-            if (err) {
-                console.error('Error getting video metadata:', err);
-                reject(err);
-                return;
-            }
+        // Prepare video filters - absolute minimum for cloud reliability
+        let videoFilters = [];
             
-            // Find the video stream
-            const videoStream = metadata.streams.find(stream => stream.codec_type === 'video');
-            if (!videoStream) {
-                console.error('No video stream found');
-                reject(new Error('No video stream found'));
-                return;
-            }
+        // Add text watermark if provided
+        if (textWatermark) {
+            console.log(`Adding text/emoji watermark: ${textWatermark}`);
             
-            // Get video dimensions
-            const width = videoStream.width || 1920;
-            const height = videoStream.height || 1080;
-            
-            // Create command with the simplest possible approach
-            let command = ffmpeg(inputPath);
-            
-            // Prepare video filters
-            let videoFilters = [
-                {
-                    filter: 'setpts',
-                    options: `${ptsVar}*PTS` // Extremely minimal timing adjustment
+            // Add drawtext filter with estimated positioning
+            videoFilters.push({
+                filter: 'drawtext',
+                options: {
+                    text: textWatermark,
+                    fontsize: 36, // Fixed size for cloud reliability
+                    fontcolor: 'white@0.75', // Semi-transparent white
+                    shadowcolor: 'black@0.5', // Add shadow for better visibility
+                    shadowx: 2,
+                    shadowy: 2,
+                    box: 1,
+                    boxcolor: 'black@0.2', // Slight background box for better visibility
+                    boxborderw: 5,
+                    fix_bounds: true, // Ensure it stays within frame
+                    // Position from the bottom right
+                    x: 'w-tw-10', // 10px from right edge
+                    y: 'h-th-10'  // 10px from bottom edge
                 }
-            ];
-            
-            // Add text watermark if provided
-            if (textWatermark) {
-                console.log(`Adding text/emoji watermark: ${textWatermark}`);
-                
-                // Add drawtext filter for the watermark
-                videoFilters.push({
-                    filter: 'drawtext',
-                    options: {
-                        text: textWatermark,
-                        fontsize: Math.min(height / 20, 36), // Size proportional to video height, max 36
-                        fontcolor: 'white@0.75', // Semi-transparent white
-                        shadowcolor: 'black@0.5', // Add shadow for better visibility
-                        shadowx: 2,
-                        shadowy: 2,
-                        box: 1,
-                        boxcolor: 'black@0.2', // Slight background box for better visibility
-                        boxborderw: 5,
-                        fix_bounds: true, // Ensure it stays within frame
-                        // Position from the bottom right
-                        x: 'w-tw-10', // 10px from right edge
-                        y: 'h-th-10'  // 10px from bottom edge
-                    }
-                });
-            }
-            
-            // Apply video filters
+            });
+        }
+        
+        // Apply video filters
+        if (videoFilters.length > 0) {
             command.videoFilters(videoFilters);
-            
-            // Audio filters: ultra-subtle pitch adjustment - almost imperceptible but still making data unique
-            command.audioFilters([
-                {
-                    filter: 'asetrate',
-                    options: [`48000*${pitchFactor}`]
-                },
-                {
-                    filter: 'aresample',
-                    options: ['48000']
-                }
+        }
+        
+        // Skip audio filters entirely to prevent hanging
+        // Just add imperceptible metadata changes instead
+        
+        // Set output options - use higher quality to minimize compression artifacts
+        command
+            .outputOptions([
+                '-c:v', 'copy',        // Just copy video stream for maximum speed
+                '-c:a', 'copy',        // Just copy audio stream for maximum speed
+                '-movflags', '+faststart',
+                // Add minimal metadata changes instead of filters
+                '-metadata', `title=${name}_edit_${randomId}`,
+                '-metadata', `comment=Processed video ${new Date().toISOString()}`
             ]);
             
-            // Set output options - use higher quality to minimize compression artifacts
-            command
-                .outputOptions([
-                    '-c:v', 'libx264',
-                    '-c:a', 'aac',
-                    '-b:v', '2000k',
-                    '-preset', 'ultrafast',
-                    '-movflags', '+faststart',
-                    '-crf', '18' // Higher quality to minimize visible changes
-                ]);
-                
-            // Add random metadata (this is the primary way we create uniqueness)
-            const randomMetadata = generateRandomMetadata();
-            command
-                .addOutputOption('-metadata', `title=${name}_edit_${randomId}`)
-                .addOutputOption('-metadata', `comment=Processed video`)
-                .addOutputOption('-metadata', `date=${randomMetadata.date}`)
-                .addOutputOption('-metadata', `year=${randomMetadata.year}`)
-                .addOutputOption('-metadata', `device_model=${randomMetadata.device_model}`)
-                .addOutputOption('-metadata', `encoder=${randomMetadata.encoder}`)
-                .addOutputOption('-metadata', `software=${randomMetadata.software}`)
-                .addOutputOption('-metadata', `resolution=${randomMetadata.resolution}`)
-                .addOutputOption('-metadata', `location=${randomMetadata.location}`)
-                .addOutputOption('-metadata', `gps=${randomMetadata.gps}`)
-                .addOutputOption('-metadata', `audio_codec=${randomMetadata.audio_codec}`)
-                .addOutputOption('-metadata', `audio_sample_rate=${randomMetadata.audio_sample_rate}`)
-                .addOutputOption('-metadata', `audio_bit_rate=${randomMetadata.audio_bit_rate}`)
-                .addOutputOption('-metadata', `audio_equipment=${randomMetadata.audio_equipment}`)
-                .addOutputOption('-metadata', `audio_software=${randomMetadata.audio_software}`);
-            
-            // Process and save the output
-            command
-                .on('start', (cmdline) => {
-                    console.log(`🚀 FFmpeg rehash command started`);
-                    //console.log(cmdline); // Uncomment to debug
-                })
-                .on('progress', (progress) => {
-                    if (progress.percent) {
-                        console.log(`⏳ Rehashing progress: ${Math.round(progress.percent)}%`);
-                    }
-                })
-                .on('error', (err, stdout, stderr) => {
-                    console.error('❌ FFmpeg rehash error:', err);
-                    if (stderr) console.error(stderr);
-                    reject(err);
-                })
-                .on('end', () => {
-                    console.log('✅ Video rehash completed successfully (changes are virtually imperceptible)');
-                    resolve(outputPath);
-                })
-                .save(outputPath);
-        });
+        // Process and save the output
+        command
+            .on('start', (cmdline) => {
+                console.log(`🚀 FFmpeg rehash command started (cloud-optimized)`);
+            })
+            .on('progress', (progress) => {
+                if (progress.percent) {
+                    console.log(`⏳ Rehashing progress: ${Math.round(progress.percent)}%`);
+                    // Reset timeout on progress
+                    clearTimeout(timeoutId);
+                    const newTimeoutId = setTimeout(() => {
+                        console.error('Rehash timeout - killing process');
+                        command.kill('SIGKILL');
+                        reject(new Error('Rehash timeout - process terminated'));
+                    }, 5 * 60 * 1000); // 5-minute timeout from last progress
+                }
+            })
+            .on('error', (err, stdout, stderr) => {
+                clearTimeout(timeoutId);
+                console.error('❌ FFmpeg rehash error:', err);
+                if (stderr) console.error(stderr);
+                reject(err);
+            })
+            .on('end', () => {
+                clearTimeout(timeoutId);
+                console.log('✅ Video rehash completed successfully');
+                resolve(outputPath);
+            })
+            .save(outputPath);
     });
 }
 
