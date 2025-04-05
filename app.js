@@ -99,7 +99,9 @@ async function downloadFile(url, outputPath) {
     });
 }
 
-// Handle slash command
+// Fix the slash command to not clear existing videos and add a debug counter
+let globalVideoCount = 0; // For tracking total videos ever added
+
 app.command('/videoprep', async ({ command, ack, client }) => {
     try {
         await ack();
@@ -107,18 +109,24 @@ app.command('/videoprep', async ({ command, ack, client }) => {
         // Log the channel ID for debugging
         console.log(`Command triggered in channel: ${command.channel_id}`);
         
-        // Clear any existing pending videos for this channel
-        pendingVideos.set(command.channel_id, []);
+        // Instead, ensure the channel exists in the map without clearing
+        if (!pendingVideos.has(command.channel_id)) {
+            pendingVideos.set(command.channel_id, []);
+        }
+        
+        // Get current video count
+        const currentVideos = pendingVideos.get(command.channel_id) || [];
+        console.log(`Channel ${command.channel_id} has ${currentVideos.length} videos in queue`);
 
         await client.chat.postMessage({
             channel: command.channel_id,
-            text: "Upload your videos to this channel. When you're done uploading, click 'Process Videos' to modify them all at once.",
+            text: `Upload your videos to this channel. When you're done uploading, click 'Process Videos' to modify them all at once. ${currentVideos.length > 0 ? `(${currentVideos.length} videos already in queue)` : ''}`,
             blocks: [
                 {
                     type: "section",
                     text: {
                         type: "mrkdwn",
-                        text: "*Upload Multiple Videos:*\n1️⃣ Upload all your videos to this channel\n2️⃣ Click the button below when done uploading\n3️⃣ Set processing options for all videos"
+                        text: `*Upload Multiple Videos:*\n1️⃣ Upload all your videos to this channel\n2️⃣ Click the button below when done uploading\n3️⃣ Set processing options for all videos ${currentVideos.length > 0 ? `\n\n*${currentVideos.length} videos already in queue*` : ''}`
                     }
                 },
                 {
@@ -128,7 +136,7 @@ app.command('/videoprep', async ({ command, ack, client }) => {
                             type: "button",
                             text: {
                                 type: "plain_text",
-                                text: "Process Videos",
+                                text: currentVideos.length > 0 ? `Process Videos (${currentVideos.length})` : "Process Videos",
                                 emoji: true
                             },
                             // Store the channel ID in the button metadata
@@ -144,11 +152,11 @@ app.command('/videoprep', async ({ command, ack, client }) => {
     }
 });
 
-// Handle file sharing
+// Modify the file_shared event handler to be more robust
 app.event('file_shared', async ({ event, client }) => {
     try {
         // Log the event for debugging
-        console.log(`File shared event received. Channel ID: ${event.channel_id}, File ID: ${event.file_id}`);
+        console.log(`File shared event received at ${new Date().toISOString()}. Channel ID: ${event.channel_id}, File ID: ${event.file_id}`);
         
         const result = await client.files.info({
             file: event.file_id
@@ -177,24 +185,37 @@ app.event('file_shared', async ({ event, client }) => {
             return;
         }
 
-        // Add to pending videos with debug info
+        // Add to pending videos with debug info and unique ID
+        globalVideoCount++;
+        const videoId = `video_${globalVideoCount}_${Date.now()}`;
+        
+        // Create a deep copy of file object to avoid reference issues
+        const fileCopy = JSON.parse(JSON.stringify(file));
+        
+        // Use a safer approach to get and update the videos array
         let channelVideos = pendingVideos.get(event.channel_id) || [];
-        channelVideos.push({
-            file: file,
+        const newVideo = {
+            file: fileCopy,
             file_id: event.file_id,
-            added_time: new Date().toISOString()
-        });
+            added_time: new Date().toISOString(),
+            unique_id: videoId
+        };
+        
+        channelVideos.push(newVideo);
+        
+        // CRITICAL: Make sure to set the updated array back to the map
         pendingVideos.set(event.channel_id, channelVideos);
         
         console.log(`Added video to queue for channel ${event.channel_id}. Queue now has ${channelVideos.length} videos`);
-        console.log(`Pending videos map now has ${pendingVideos.size} channels`);
+        console.log(`Pending videos map has ${pendingVideos.size} channels`);
+        console.log(`Total videos ever added: ${globalVideoCount}`);
 
         // Print more detailed queue info for debugging
         console.log('Video Queue Contents:');
         pendingVideos.forEach((videos, channelId) => {
             console.log(`Channel ${channelId}: ${videos.length} videos`);
             videos.forEach((vid, idx) => {
-                console.log(`  Video ${idx+1}: ${vid.file.name} (ID: ${vid.file_id})`);
+                console.log(`  Video ${idx+1}: ${vid.file?.name || 'Unknown'} (ID: ${vid.file_id}, Added: ${vid.added_time})`);
             });
         });
 
@@ -217,60 +238,51 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
     
     // Log ALL possible channel IDs for debugging
     console.log('==== PROCESSING VIDEOS ====');
+    console.log(`Action triggered at ${new Date().toISOString()}`);
     console.log(`Action triggered with button value: ${body.actions[0].value}`);
     console.log(`Action body.channel.id: ${body.channel?.id}`);
     console.log(`Action body.container.channel_id: ${body.container?.channel_id}`);
     console.log(`Using channel ID: ${channelId}`);
-    console.log(`Pending videos map has ${pendingVideos.size} channels`);
+    console.log(`Pending videos map has ${pendingVideos.size} channels with ${getTotalVideoCount()} total videos`);
     
     // Dump the entire map for debugging
     console.log('Full pending videos map contents:');
     pendingVideos.forEach((videos, mapChannelId) => {
         console.log(`Channel ${mapChannelId}: ${videos.length} videos ${mapChannelId === channelId ? '(MATCH)' : '(NO MATCH)'}`);
+        if (videos.length > 0) {
+            console.log(`  First video: ${videos[0].file?.name || 'Unknown'} (Added: ${videos[0].added_time})`);
+            console.log(`  Last video: ${videos[videos.length-1].file?.name || 'Unknown'} (Added: ${videos[videos.length-1].added_time})`);
+        }
     });
     
-    // Improve the retry function with correct channel ID
-    const checkForVideos = async (attempts = 0) => {
-        let channelVideos = pendingVideos.get(channelId) || [];
-        
-        // Log the current state for debugging
-        console.log(`Checking for videos - attempt ${attempts + 1}. Found: ${channelVideos.length} videos for channel ${channelId}`);
-        
-        if (channelVideos.length === 0 && attempts < 5) {
-            // If no videos found on first try, wait a moment and try again
-            console.log(`No videos found for channel ${channelId}, waiting for retrieval...`);
-            
-            // Only send a message on the first attempt
-            if (attempts === 0) {
-                await client.chat.postMessage({
-                    channel: channelId,
-                    text: "Looking for videos to process..."
-                });
-            }
-            
-            // Longer delay between attempts (3 seconds × attempt number)
-            const delayTime = 3000 * (attempts + 1);
-            console.log(`Waiting ${delayTime}ms before retry ${attempts + 1}...`);
-            await new Promise(resolve => setTimeout(resolve, delayTime));
-            
-            // Refresh the channel videos
-            channelVideos = pendingVideos.get(channelId) || [];
-            console.log(`After delay: found ${channelVideos.length} videos for channel ${channelId}`);
-            
-            // If still no videos, retry
-            if (channelVideos.length === 0) {
-                return checkForVideos(attempts + 1);
-            }
-        }
-        
-        return channelVideos;
-    };
-    
-    // Check for videos with improved channel ID handling
-    const channelVideos = await checkForVideos();
+    // Safety check to ensure we don't lose videos
+    // If the channel doesn't exist in the map, check if any channels have videos
+    let channelVideos = pendingVideos.get(channelId) || [];
     
     if (channelVideos.length === 0) {
-        console.log(`No videos found after all retries for channel ${channelId}`);
+        console.log(`Channel ${channelId} has 0 videos - checking for misplaced videos in other channels`);
+        
+        // Look for the first channel with videos
+        pendingVideos.forEach((videos, otherChannelId) => {
+            if (videos.length > 0 && channelVideos.length === 0) {
+                console.log(`Found ${videos.length} videos in channel ${otherChannelId} - using these instead`);
+                channelVideos = videos;
+                // Don't overwrite the original channelId - we'll use the one from the button
+            }
+        });
+    }
+    
+    // Additional debugging for race conditions
+    console.log(`Final video count for processing: ${channelVideos.length}`);
+    
+    // If we still have no videos, try the retry approach
+    if (channelVideos.length === 0) {
+        // Use the original check with retries
+        channelVideos = await checkForVideos(channelId);
+    }
+    
+    if (channelVideos.length === 0) {
+        console.log(`No videos found after all checks for channel ${channelId}`);
         
         // Check if there are videos in other channels that might have been misplaced
         let foundInOtherChannels = false;
@@ -975,3 +987,53 @@ const server = http.createServer((req, res) => {
         process.exit(1);
     }
 })();
+
+// Helper function to get total video count
+function getTotalVideoCount() {
+    let count = 0;
+    pendingVideos.forEach(videos => {
+        count += videos.length;
+    });
+    return count;
+}
+
+// Improve the checkForVideos function with even better debugging
+async function checkForVideos(channelId, attempts = 0) {
+    let channelVideos = pendingVideos.get(channelId) || [];
+    
+    // More detailed debugging on each attempt
+    console.log(`Checking for videos - attempt ${attempts + 1}. Found: ${channelVideos.length} videos for channel ${channelId}`);
+    console.log(`Current map status: ${pendingVideos.size} channels, ${getTotalVideoCount()} total videos`);
+    
+    if (channelVideos.length === 0 && attempts < 5) {
+        // If no videos found on first try, wait a moment and try again
+        console.log(`No videos found for channel ${channelId}, waiting for retrieval...`);
+        
+        // Only send a message on the first attempt
+        if (attempts === 0) {
+            // Skip the message to reduce noise
+        }
+        
+        // Longer delay between attempts (3 seconds × attempt number)
+        const delayTime = 3000 * (attempts + 1);
+        console.log(`Waiting ${delayTime}ms before retry ${attempts + 1}...`);
+        await new Promise(resolve => setTimeout(resolve, delayTime));
+        
+        // Reprint the entire map for debuggin - sometimes videos appear during the wait
+        console.log('Map contents after delay:');
+        pendingVideos.forEach((videos, mapChannelId) => {
+            console.log(`Channel ${mapChannelId}: ${videos.length} videos`);
+        });
+        
+        // Refresh the channel videos
+        channelVideos = pendingVideos.get(channelId) || [];
+        console.log(`After delay: found ${channelVideos.length} videos for channel ${channelId}`);
+        
+        // If still no videos, retry
+        if (channelVideos.length === 0) {
+            return checkForVideos(channelId, attempts + 1);
+        }
+    }
+    
+    return channelVideos;
+}
