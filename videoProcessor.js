@@ -256,8 +256,8 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                     filter: 'drawtext',
                     options: {
                         text: textWatermark,
-                        fontsize: Math.min(height / 20, 36), // Size proportional to video height, max 36
-                        fontcolor: 'white@0.75', // Semi-transparent white
+                        fontsize: Math.min(height / 10, 72), // LARGER size - 72px max instead of 36px
+                        fontcolor: 'white@0.0', // Transparent white to preserve emoji colors
                         shadowcolor: 'black@0.5', // Add shadow for better visibility
                         shadowx: 2,
                         shadowy: 2,
@@ -265,8 +265,9 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                         boxcolor: 'black@0.2', // Slight background box for better visibility
                         boxborderw: 5,
                         fix_bounds: true, // Ensure it stays within frame
+                        // Position in the UPPER right corner
                         x: 'w-tw-10', // 10px from right edge
-                        y: 'h-th-10'  // 10px from bottom edge
+                        y: '10'  // 10px from TOP edge
                     }
                 });
             }
@@ -511,8 +512,8 @@ async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark 
                 filter: 'drawtext',
                 options: {
                     text: textWatermark,
-                    fontsize: 36, // Fixed size for cloud reliability
-                    fontcolor: 'white@0.75', // Semi-transparent white
+                    fontsize: 72, // LARGER fixed size (72px instead of 36px)
+                    fontcolor: 'white@0.0', // Transparent white to preserve emoji colors
                     shadowcolor: 'black@0.5', // Add shadow for better visibility
                     shadowx: 2,
                     shadowy: 2,
@@ -520,9 +521,9 @@ async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark 
                     boxcolor: 'black@0.2', // Slight background box for better visibility
                     boxborderw: 5,
                     fix_bounds: true, // Ensure it stays within frame
-                    // Position from the bottom right
+                    // Position in the UPPER right corner
                     x: 'w-tw-10', // 10px from right edge
-                    y: 'h-th-10'  // 10px from bottom edge
+                    y: '10'  // 10px from TOP edge
                 }
             });
         }
