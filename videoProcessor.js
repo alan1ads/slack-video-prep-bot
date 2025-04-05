@@ -499,16 +499,6 @@ async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark 
             reject(new Error('Rehash timeout - process terminated'));
         }, 10 * 60 * 1000); // 10-minute timeout
         
-        // ULTRA-SUBTLE VALUES:
-        // Use extremely small variation values that are virtually imperceptible
-        // but still create unique digital fingerprints
-        
-        // Ultra-ultra-subtle pitch adjustment - completely imperceptible (0.0001% to 0.0005%)
-        const pitchFactor = (1 + (Math.random() * 0.000004) + 0.000001).toFixed(10);
-        
-        // Skip the FFprobe step entirely for faster processing
-        // Use a direct, streamlined approach
-        
         // Prepare video filters - absolute minimum for cloud reliability
         let videoFilters = [];
             
@@ -537,25 +527,33 @@ async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark 
             });
         }
         
-        // Apply video filters
+        // Apply video filters if needed
         if (videoFilters.length > 0) {
             command.videoFilters(videoFilters);
-        }
-        
-        // Skip audio filters entirely to prevent hanging
-        // Just add imperceptible metadata changes instead
-        
-        // Set output options - use higher quality to minimize compression artifacts
-        command
-            .outputOptions([
-                '-c:v', 'copy',        // Just copy video stream for maximum speed
-                '-c:a', 'copy',        // Just copy audio stream for maximum speed
+            
+            // When using filters, we must use encoding instead of stream copy for video
+            command.outputOptions([
+                '-c:v', 'libx264',     // Use encoding since we have filters
+                '-c:a', 'copy',        // Still copy audio stream for speed
+                '-preset', 'ultrafast', // Fastest encoding
+                '-crf', '23',          // Reasonable quality/size tradeoff
                 '-movflags', '+faststart',
-                // Add minimal metadata changes instead of filters
+                // Add minimal metadata changes
                 '-metadata', `title=${name}_edit_${randomId}`,
                 '-metadata', `comment=Processed video ${new Date().toISOString()}`
             ]);
-            
+        } else {
+            // Without filters, we can use stream copy for both audio and video (faster)
+            command.outputOptions([
+                '-c:v', 'copy',        // Copy video stream for maximum speed
+                '-c:a', 'copy',        // Copy audio stream for maximum speed
+                '-movflags', '+faststart',
+                // Add minimal metadata changes
+                '-metadata', `title=${name}_edit_${randomId}`,
+                '-metadata', `comment=Processed video ${new Date().toISOString()}`
+            ]);
+        }
+        
         // Process and save the output
         command
             .on('start', (cmdline) => {
