@@ -267,7 +267,6 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                 if (!fs.existsSync(emojiImagePath)) {
                     try {
                         // Try to download the emoji image synchronously before processing
-                        // Use the child_process execSync to run a curl command for simplicity
                         const emojiCodePoint = textWatermark.codePointAt(0).toString(16);
                         const emojiUrl = `https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/${emojiCodePoint}.png`;
                         
@@ -282,32 +281,42 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                 
                 // Only add overlay if the emoji image exists
                 if (fs.existsSync(emojiImagePath)) {
-                    // IMPORTANT: For overlays we need to use a complex filter graph instead
-                    // Remove the overlay from videoFilters and handle it separately
+                    console.log("Emoji file exists, proceeding with overlay");
                     
-                    // First apply the basic video filters
-                    command.videoFilters(videoFilters);
+                    // SIMPLIFIED APPROACH: Use standard filters but skip the complex filter setup
+                    // This is more reliable in cloud environments
                     
-                    // Then add the emoji as an input and use complexFilter
-                    command.input(emojiImagePath);
-                    
-                    // Create a complex filter string instead of using the filter objects
-                    // This ensures proper handling of multiple inputs
-                    command.complexFilter([
-                        {
-                            filter: 'overlay',
-                            options: {
-                                x: 'main_w-overlay_w-10',   // 10px from right edge
-                                y: '10',                    // 10px from top edge
-                                eof_action: 'repeat',       // Keep showing the overlay
-                                enable: '1'                 // Always enabled
-                            },
-                            inputs: ['0:v', '1:v'],         // Use input labels (main video [0] and emoji [1])
-                            outputs: ['v']                  // Name the output stream 'v'
+                    // DO NOT add the emoji image as a separate input - we'll use the drawtext filter instead
+                    // It's simpler and more reliable
+
+                    // Add a drawbox filter for background of emoji
+                    videoFilters.push({
+                        filter: 'drawbox', 
+                        options: {
+                            x: 'w-72-20',             // Position box for emoji (width of emoji + margin)
+                            y: '10',                  // 10px from top
+                            w: '72',                  // Width of emoji
+                            h: '72',                  // Height of emoji
+                            color: 'black@0.3',       // Semi-transparent background
+                            t: 'fill'                 // Fill the box
                         }
-                    ], ['v']);                             // Map the 'v' output to the video output
+                    });
                     
-                    return; // Skip applying regular videoFilters since we're using complexFilter
+                    // Use drawtext instead of overlay - more compatible with cloud environments
+                    videoFilters.push({
+                        filter: 'drawtext',
+                        options: {
+                            text: textWatermark,      // The emoji character
+                            fontsize: 50,             // Large enough to be visible
+                            x: 'w-60-20',             // Position (adjusted to center in box)
+                            y: '20',                  // Position from top
+                            shadowcolor: 'black@0.5', // Shadow for better visibility
+                            shadowx: 2,
+                            shadowy: 2,
+                        }
+                    });
+                    
+                    console.log("Added emoji text with drawtext filter");
                 }
             }
             
@@ -560,7 +569,6 @@ async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark 
             if (!fs.existsSync(emojiImagePath)) {
                 try {
                     // Try to download the emoji image synchronously before processing
-                    // Use the child_process execSync to run a curl command for simplicity
                     const emojiCodePoint = textWatermark.codePointAt(0).toString(16);
                     const emojiUrl = `https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/${emojiCodePoint}.png`;
                     
@@ -575,39 +583,36 @@ async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark 
             
             // Only add overlay if the emoji image exists
             if (fs.existsSync(emojiImagePath)) {
-                // Add the emoji image as an input
-                command.input(emojiImagePath);
+                console.log("Emoji file exists, proceeding with overlay");
                 
-                // Create a complex filter for the overlay
-                command.complexFilter([
-                    {
-                        filter: 'overlay',
-                        options: {
-                            x: 'main_w-overlay_w-10',   // 10px from right edge
-                            y: '10',                    // 10px from top edge
-                            eof_action: 'repeat',       // Keep showing the overlay
-                            enable: '1'                 // Always enabled
-                        },
-                        inputs: ['0:v', '1:v'],         // Use input labels (main video [0] and emoji [1])
-                        outputs: ['v']                  // Name the output stream 'v'
+                // Add a drawbox filter for background of emoji
+                videoFilters.push({
+                    filter: 'drawbox', 
+                    options: {
+                        x: 'w-72-20',             // Position box for emoji (width of emoji + margin)
+                        y: '10',                  // 10px from top
+                        w: '72',                  // Width of emoji
+                        h: '72',                  // Height of emoji
+                        color: 'black@0.3',       // Semi-transparent background
+                        t: 'fill'                 // Fill the box
                     }
-                ], ['v']);                             // Map the 'v' output to the video output
+                });
                 
-                // When using filters, we must use encoding instead of stream copy for video
-                command.outputOptions([
-                    '-c:v', 'libx264',     // Use encoding since we have filters
-                    '-c:a', 'copy',        // Still copy audio stream for speed
-                    '-preset', 'ultrafast', // Fastest encoding
-                    '-crf', '23',          // Reasonable quality/size tradeoff
-                    '-movflags', '+faststart',
-                    // Add minimal metadata changes
-                    '-metadata', `title=${name}_edit_${randomId}`,
-                    '-metadata', `comment=Processed video ${new Date().toISOString()}`
-                ]);
+                // Use drawtext instead of overlay - more compatible with cloud environments
+                videoFilters.push({
+                    filter: 'drawtext',
+                    options: {
+                        text: textWatermark,      // The emoji character
+                        fontsize: 50,             // Large enough to be visible
+                        x: 'w-60-20',             // Position (adjusted to center in box)
+                        y: '20',                  // Position from top
+                        shadowcolor: 'black@0.5', // Shadow for better visibility
+                        shadowx: 2,
+                        shadowy: 2,
+                    }
+                });
                 
-                // We've handled the video filters with complexFilter, so clear the array
-                videoFilters = [];
-                return;
+                console.log("Added emoji text with drawtext filter");
             }
         }
         
