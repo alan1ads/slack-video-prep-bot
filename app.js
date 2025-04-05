@@ -5,7 +5,6 @@ const http = require('http');
 const { 
     processVideo, 
     applyRehash, 
-    applyWatermark, 
     applyTextOverlay, 
     applyEmojiImageOverlay 
 } = require('./videoProcessor');
@@ -895,7 +894,7 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
                 // Process video with the new textWatermark parameter
                 try {
                     // First apply standard processing
-                    await processVideo(
+                    const processedPath = await processVideo(
                         inputPath, 
                         outputPath, 
                         speedAdjustment, 
@@ -922,11 +921,27 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
                     // Always apply rehash as a standard part of processing
                     console.log('Applying rehash data refresh to:', videoInfo.file?.name || 'Unknown');
                     const rehashOutputPath = path.join(outputDir, `rehash_${videoInfo.file_id}.mp4`);
+                    
+                    // Use the actual processed path that came back from processVideo
+                    // This could be different if a watermark was applied
+                    const actualInputPath = processedPath || outputPath;
+                    
+                    // Check if input path exists
+                    if (!fs.existsSync(actualInputPath)) {
+                        console.error(`Input file for rehash doesn't exist: ${actualInputPath}`);
+                        throw new Error('Processed video file not found');
+                    }
+                    
                     // Pass the text watermark to the rehash function as well
-                    await applyRehash(outputPath, rehashOutputPath, overlaysDir, textWatermark);
+                    await applyRehash(actualInputPath, rehashOutputPath, overlaysDir, textWatermark);
                     
                     // Replace the output path with the rehashed version
+                    if (fs.existsSync(actualInputPath) && actualInputPath !== outputPath) {
+                        fs.unlinkSync(actualInputPath);
+                    }
                     if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+                    
+                    // Rename the rehashed output to the standard output path for upload
                     fs.renameSync(rehashOutputPath, outputPath);
                     console.log('Rehash completed for:', videoInfo.file?.name || 'Unknown');
 

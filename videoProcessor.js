@@ -450,12 +450,11 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                 
                 // If watermark requested, apply it as a separate step
                 if (textWatermark) {
-                    // Create a temporary file path for the intermediate result
-                    const tempPath = outputPath;
-                    const finalPath = `${path.dirname(outputPath)}/final_${path.basename(outputPath)}`;
-                    
                     try {
-                        // Apply the watermark (works for both emoji and text)
+                        // Create a temporary file path for the intermediate result
+                        const tempPath = outputPath;
+                        const finalPath = `${path.dirname(outputPath)}/final_${path.basename(outputPath)}`;
+                        
                         console.log('Applying watermark as separate step...');
                         
                         // Check if it's likely an emoji (single character)
@@ -468,7 +467,7 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                                 const result = await applyEmojiImageOverlay(tempPath, finalPath, textWatermark);
                                 if (result === finalPath && fs.existsSync(finalPath)) {
                                     if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-                                    resolve(finalPath);
+                                    resolve(finalPath); // Return the new path!
                                 } else {
                                     resolve(tempPath);
                                 }
@@ -477,7 +476,7 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                                 const result = await applyTextOverlay(tempPath, finalPath, textWatermark);
                                 if (result === finalPath && fs.existsSync(finalPath)) {
                                     if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-                                    resolve(finalPath);
+                                    resolve(finalPath); // Return the new path!
                                 } else {
                                     resolve(tempPath);
                                 }
@@ -487,7 +486,7 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                             const result = await applyTextOverlay(tempPath, finalPath, textWatermark);
                             if (result === finalPath && fs.existsSync(finalPath)) {
                                 if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-                                resolve(finalPath);
+                                resolve(finalPath); // Return the new path!
                             } else {
                                 resolve(tempPath);
                             }
@@ -495,7 +494,7 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                     } catch (watermarkError) {
                         console.error('Error applying watermark:', watermarkError);
                         // If watermark fails, still return the processed video
-                        resolve(tempPath);
+                        resolve(outputPath);
                     }
                 } else {
                     // No watermark requested, just resolve with the processed file
@@ -513,6 +512,12 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
 async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark = null) {
     return new Promise(async (resolve, reject) => {
         try {
+            // Check if input file exists first
+            if (!fs.existsSync(inputPath)) {
+                console.error(`Input file does not exist: ${inputPath}`);
+                return reject(new Error(`Input file not found: ${inputPath}`));
+            }
+
             // Generate random ID
             const randomId = Math.floor(Math.random() * 1000);
             const basename = path.basename(inputPath);
