@@ -901,7 +901,6 @@ async function retryWithSimpleOverlay(inputPath, outputPath, emojiImagePath) {
 module.exports = { 
     processVideo, 
     applyRehash,
-    applyWatermark,
     applyTextOverlay,
     applyEmojiImageOverlay,
     retryWithSimpleOverlay,
