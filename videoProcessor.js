@@ -434,7 +434,7 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
     });
 }
 
-// Super subtle rehash function for cloud environments
+// Micro-subtle rehash function for cloud environments
 async function applyRehash(inputPath, outputPath, overlaysFolder) {
     return new Promise((resolve, reject) => {
         // Generate random ID
@@ -448,40 +448,37 @@ async function applyRehash(inputPath, outputPath, overlaysFolder) {
             outputPath = path.join(path.dirname(inputPath), `${name}_fresh_edit_${randomId}${ext}`);
         }
         
-        console.log(`\n🎬 Processing rehash (ultra subtle): ${basename}`);
+        console.log(`\n🎬 Processing rehash (micro-subtle): ${basename}`);
         
-        // ULTRA SUBTLE VALUES:
-        // Use significantly smaller variation values that won't be noticeable
-        // but will still create unique fingerprints
+        // MICRO-SUBTLE VALUES:
+        // Use extremely small variation values that are virtually imperceptible
+        // but still create unique digital fingerprints
         
-        // Extremely subtle pitch adjustment (0.1% to 0.3% range instead of 0.5% to 1.5%)
-        const pitchFactor = (1 + (Math.random() * 0.002) + 0.001).toFixed(5);
+        // Micro-subtle pitch adjustment (0.01% to 0.05% range instead of 0.1%-0.3%)
+        const pitchFactor = (1 + (Math.random() * 0.0004) + 0.0001).toFixed(6);
         
-        // Extremely subtle FPS variations (only ±0.05 instead of switching between 29.97/30.01)
-        const originalFps = 30; // We'll stay very close to original
-        const fpsVar = originalFps + (Math.random() * 0.1 - 0.05);
+        // Micro-subtle FPS variations (only ±0.01 instead of ±0.05)
+        const originalFps = 30; // We'll stay extremely close to original
+        const fpsVar = originalFps + (Math.random() * 0.02 - 0.01);
         
-        // Extremely subtle PTS adjustments (0.05% to 0.1% instead of 0.5%)
-        const ptsVar = 1 + (Math.random() * 0.0005 + 0.0005);
+        // Micro-subtle PTS adjustments (0.005% to 0.01% instead of 0.05%-0.1%)
+        const ptsVar = 1 + (Math.random() * 0.00005 + 0.00005);
         
-        console.log(`Using ultra-subtle variations: FPS=${fpsVar.toFixed(3)}, PTS=${ptsVar.toFixed(5)}, Pitch=${pitchFactor}`);
+        console.log(`Using micro-subtle variations: FPS=${fpsVar.toFixed(4)}, PTS=${ptsVar.toFixed(6)}, Pitch=${pitchFactor}`);
         
         // Create command with the simplest possible approach
         let command = ffmpeg(inputPath);
-            
-        // Apply the extremely subtle video filters
+        
+        // Instead of changing the FPS directly (which might be noticeable),
+        // just preserve the original and focus on metadata changes and tiny audio adjustments
         command.videoFilters([
             {
-                filter: 'fps',
-                options: `fps=${fpsVar}`
-            },
-            {
                 filter: 'setpts',
-                options: `${ptsVar}*PTS`
+                options: `${ptsVar}*PTS` // Extremely minimal timing adjustment
             }
         ]);
         
-        // Audio filters: extremely subtle pitch adjustment
+        // Audio filters: micro-subtle pitch adjustment
         command.audioFilters([
             {
                 filter: 'asetrate',
@@ -493,17 +490,18 @@ async function applyRehash(inputPath, outputPath, overlaysFolder) {
             }
         ]);
         
-        // Set output options
+        // Set output options - use higher quality to minimize compression artifacts
         command
             .outputOptions([
                 '-c:v', 'libx264',
                 '-c:a', 'aac',
                 '-b:v', '2000k',
-                '-preset', 'ultrafast', // Use a faster preset for cloud
-                '-movflags', '+faststart'
+                '-preset', 'ultrafast',
+                '-movflags', '+faststart',
+                '-crf', '18' // Higher quality to minimize visible changes
             ]);
             
-        // Add random metadata (this is still important for uniqueness)
+        // Add random metadata (this is the primary way we create uniqueness)
         const randomMetadata = generateRandomMetadata();
         command
             .addOutputOption('-metadata', `title=${name}_edit_${randomId}`)
@@ -515,7 +513,12 @@ async function applyRehash(inputPath, outputPath, overlaysFolder) {
             .addOutputOption('-metadata', `software=${randomMetadata.software}`)
             .addOutputOption('-metadata', `resolution=${randomMetadata.resolution}`)
             .addOutputOption('-metadata', `location=${randomMetadata.location}`)
-            .addOutputOption('-metadata', `gps=${randomMetadata.gps}`);
+            .addOutputOption('-metadata', `gps=${randomMetadata.gps}`)
+            .addOutputOption('-metadata', `audio_codec=${randomMetadata.audio_codec}`)
+            .addOutputOption('-metadata', `audio_sample_rate=${randomMetadata.audio_sample_rate}`)
+            .addOutputOption('-metadata', `audio_bit_rate=${randomMetadata.audio_bit_rate}`)
+            .addOutputOption('-metadata', `audio_equipment=${randomMetadata.audio_equipment}`)
+            .addOutputOption('-metadata', `audio_software=${randomMetadata.audio_software}`);
         
         // Process and save the output
         command
@@ -534,7 +537,7 @@ async function applyRehash(inputPath, outputPath, overlaysFolder) {
                 reject(err);
             })
             .on('end', () => {
-                console.log('✅ Video rehash completed successfully (changes are ultra subtle)');
+                console.log('✅ Video rehash completed successfully (changes are virtually imperceptible)');
                 resolve(outputPath);
             })
             .save(outputPath);
