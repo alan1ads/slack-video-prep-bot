@@ -505,40 +505,6 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
                                 text: '*Note:* Voice Enhancement and Audio Watermarking will be applied randomly. Audio metadata will be generated automatically.'
                             }
                         ]
-                    },
-                    // After the random_mode block, add this:
-                    {
-                        type: 'input',
-                        block_id: 'apply_rehash',
-                        optional: true,
-                        element: {
-                            type: 'checkboxes',
-                            action_id: 'rehash_checkbox',
-                            options: [
-                                {
-                                    text: {
-                                        type: 'plain_text',
-                                        text: 'Apply video rehash (frame swapping, pitch adjustment)',
-                                        emoji: true
-                                    },
-                                    value: 'rehash'
-                                }
-                            ]
-                        },
-                        label: {
-                            type: 'plain_text',
-                            text: 'Video Rehashing',
-                            emoji: true
-                        }
-                    },
-                    {
-                        type: 'context',
-                        elements: [
-                            {
-                                type: 'mrkdwn',
-                                text: 'The rehash feature swaps frames in the middle section of the video and slightly adjusts audio pitch to help videos avoid automated detection systems.'
-                            }
-                        ]
                     }
                 ],
                 private_metadata: body.channel.id
@@ -581,9 +547,9 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
     let compression = null;
     let deEssing = null;
     
-    // Check if rehash is requested
-    const applyRehashOption = view.state.values.apply_rehash?.rehash_checkbox?.selected_options || [];
-    const shouldRehash = applyRehashOption.some(option => option.value === 'rehash');
+    // Always apply rehash as a standard part of processing
+    const shouldRehash = true;
+    console.log('Video rehashing is enabled by default');
     
     if (shouldRehash) {
         console.log('Video rehashing is enabled');
@@ -740,17 +706,15 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
                     );
                     console.log('Processing completed for:', videoInfo.file.name);
                     
-                    // If rehash is enabled, apply it as a second pass
-                    if (shouldRehash) {
-                        console.log('Applying rehash to:', videoInfo.file.name);
-                        const rehashOutputPath = path.join(outputDir, `rehash_${videoInfo.file_id}.mp4`);
-                        await applyRehash(outputPath, rehashOutputPath, overlaysDir);
-                        
-                        // Replace the output path with the rehashed version
-                        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-                        fs.renameSync(rehashOutputPath, outputPath);
-                        console.log('Rehash completed for:', videoInfo.file.name);
-                    }
+                    // Always apply rehash as a standard part of processing
+                    console.log('Applying rehash data refresh to:', videoInfo.file.name);
+                    const rehashOutputPath = path.join(outputDir, `rehash_${videoInfo.file_id}.mp4`);
+                    await applyRehash(outputPath, rehashOutputPath, overlaysDir);
+                    
+                    // Replace the output path with the rehashed version
+                    if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+                    fs.renameSync(rehashOutputPath, outputPath);
+                    console.log('Rehash completed for:', videoInfo.file.name);
 
                     // Upload
                     await client.files.uploadV2({

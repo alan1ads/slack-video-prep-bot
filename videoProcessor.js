@@ -434,10 +434,10 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
     });
 }
 
-// New function to apply rehash effects (similar to fresh_rehash_v2.py)
+// New function to apply rehash effects (simplified for cloud environments)
 async function applyRehash(inputPath, outputPath, overlaysFolder) {
     return new Promise((resolve, reject) => {
-        // Generate random ID similar to Python version
+        // Generate random ID
         const randomId = Math.floor(Math.random() * 1000);
         const basename = path.basename(inputPath);
         const name = path.basename(basename, path.extname(basename));
@@ -448,276 +448,124 @@ async function applyRehash(inputPath, outputPath, overlaysFolder) {
             outputPath = path.join(path.dirname(inputPath), `${name}_fresh_edit_${randomId}${ext}`);
         }
         
-        console.log(`\n🎬 Processing rehash: ${basename}`);
+        console.log(`\n🎬 Processing rehash (lite): ${basename}`);
         
-        // 1. First, extract frames from a section of the video
-        const tempDir = path.join(path.dirname(inputPath), `.temp_${randomId}`);
-        fs.mkdirSync(tempDir, { recursive: true });
+        // Determine if we'll use an overlay
+        let useOverlay = false;
+        let overlayPath = null;
         
-        // Get video info to determine frame count and framerates
-        ffmpeg.ffprobe(inputPath, (err, metadata) => {
-            if (err) {
-                console.error('Error getting video metadata:', err);
-                // Clean up temp directory
-                fs.rmdirSync(tempDir, { recursive: true });
+        // Check if overlay folder exists and contains files
+        if (overlaysFolder && fs.existsSync(overlaysFolder)) {
+            try {
+                const overlayFiles = fs.readdirSync(overlaysFolder)
+                    .filter(f => f.toLowerCase().endsWith('.mp4') || f.toLowerCase().endsWith('.webm'));
+                    
+                if (overlayFiles.length > 0) {
+                    const chosenOverlay = overlayFiles[Math.floor(Math.random() * overlayFiles.length)];
+                    overlayPath = path.join(overlaysFolder, chosenOverlay);
+                    
+                    if (fs.existsSync(overlayPath)) {
+                        useOverlay = true;
+                        console.log(`📼 Overlay selected: ${chosenOverlay}`);
+                    }
+                }
+            } catch (err) {
+                console.log('⚠️ Could not access overlays folder, continuing without overlay');
+            }
+        }
+
+        // Instead of complex frame extraction and swapping,
+        // we'll use a simpler approach that creates a subtle frame rate variation
+        // and applies a slight pitch adjustment - achieving a similar effect with less processing
+        
+        // Prepare audio pitch adjustment (same as before: 1.005 to 1.015)
+        const pitchFactor = (1 + (Math.random() * 0.01) + 0.005).toFixed(5);
+        
+        // Create command
+        let command = ffmpeg(inputPath);
+        
+        // Add overlay if available
+        if (useOverlay && overlayPath) {
+            command = command.input(overlayPath);
+        }
+        
+        // Set up filter complex
+        if (useOverlay && overlayPath) {
+            // With overlay - using the simplest possible overlay filter
+            command.complexFilter([
+                '[0:v][1:v]overlay=format=auto:alpha=0.3[outv]'
+            ], 'outv')
+            .map('outv')
+            .map('0:a');
+        }
+        
+        // Apply the following subtle edits that achieve a similar effect to frame swapping:
+        // 1. Slightly variable frame rate
+        // 2. Subtle audio pitch adjustment
+        // These make the video different enough to avoid detection but without complex processing
+        
+        // Video filter: subtle framerate variation
+        command.videoFilters([
+            {
+                filter: 'fps',
+                options: `fps=${Math.random() < 0.5 ? 29.97 : 30.01}` // Subtle fps variation
+            },
+            {
+                filter: 'setpts',
+                options: `(${1 + (Math.random() * 0.005)})*PTS` // Subtle timing variation
+            }
+        ]);
+        
+        // Audio filters: pitch adjustment (same as before)
+        command.audioFilters([
+            {
+                filter: 'asetrate',
+                options: [`48000*${pitchFactor}`]
+            },
+            {
+                filter: 'aresample',
+                options: ['48000']
+            }
+        ]);
+        
+        // Set output options
+        command
+            .outputOptions([
+                '-c:v', 'libx264',
+                '-c:a', 'aac',
+                '-b:v', '2000k',
+                '-preset', 'ultrafast', // Use a faster preset for cloud
+                '-movflags', '+faststart'
+            ]);
+            
+        // Add random metadata
+        const randomMetadata = generateRandomMetadata();
+        command
+            .addOutputOption('-metadata', `title=${name}_fresh_edit_${randomId}`)
+            .addOutputOption('-metadata', `comment=Processed with stealth rehash script`)
+            .addOutputOption('-metadata', `date=${randomMetadata.date}`)
+            .addOutputOption('-metadata', `software=${randomMetadata.software}`);
+        
+        // Process and save the output
+        command
+            .on('start', (cmdline) => {
+                console.log(`🚀 FFmpeg rehash command started`);
+            })
+            .on('progress', (progress) => {
+                if (progress.percent) {
+                    console.log(`⏳ Rehashing progress: ${Math.round(progress.percent)}%`);
+                }
+            })
+            .on('error', (err, stdout, stderr) => {
+                console.error('❌ FFmpeg rehash error:', err);
+                if (stderr) console.error(stderr);
                 reject(err);
-                return;
-            }
-            
-            // Find the video stream
-            const videoStream = metadata.streams.find(stream => stream.codec_type === 'video');
-            if (!videoStream) {
-                console.error('No video stream found');
-                fs.rmdirSync(tempDir, { recursive: true });
-                reject(new Error('No video stream found'));
-                return;
-            }
-            
-            // Get original FPS and duration
-            let fps = 30; // Default fallback
-            if (videoStream.r_frame_rate) {
-                const [num, den] = videoStream.r_frame_rate.split('/');
-                fps = num / den;
-            }
-            
-            const duration = parseFloat(videoStream.duration) || 
-                             parseFloat(metadata.format.duration) || 10;
-            
-            // Calculate total frames
-            const totalFrames = Math.floor(duration * fps);
-            
-            // Extract frames from middle section (10% margin from start/end like Python script)
-            const margin = Math.floor(0.1 * totalFrames);
-            const startFrame = margin;
-            const endFrame = totalFrames - margin;
-            
-            // Only extract a section of frames in the middle (where we'll swap some)
-            const frameCount = Math.min(20, endFrame - startFrame); // Get enough frames to work with
-            const extractStart = startFrame + Math.floor((endFrame - startFrame - frameCount) / 2);
-            
-            // Extract frames to temp directory
-            console.log(`🔄 Extracting ${frameCount} frames from central section...`);
-            
-            ffmpeg(inputPath)
-                .outputOptions([
-                    `-vf select='between(n,${extractStart},${extractStart + frameCount - 1})'`,
-                    '-vsync 0'
-                ])
-                .output(path.join(tempDir, 'frame_%04d.png'))
-                .on('error', (err) => {
-                    console.error('Error extracting frames:', err);
-                    fs.rmdirSync(tempDir, { recursive: true });
-                    reject(err);
-                })
-                .on('end', () => {
-                    console.log('✅ Frames extracted successfully');
-                    
-                    // 2. Swap some frames (similar to Python version)
-                    const swapCount = Math.floor(Math.random() * 3) + 3; // 3-5 swaps
-                    
-                    // Get list of extracted frames
-                    const frameFiles = fs.readdirSync(tempDir)
-                        .filter(f => f.startsWith('frame_') && f.endsWith('.png'))
-                        .sort();
-                    
-                    if (frameFiles.length < 4) {
-                        console.error('Not enough frames extracted for swapping');
-                        fs.rmdirSync(tempDir, { recursive: true });
-                        reject(new Error('Not enough frames extracted'));
-                        return;
-                    }
-                    
-                    console.log(`🔀 Swapping ${swapCount} pairs of frames...`);
-                    
-                    // Perform the swaps
-                    for (let i = 0; i < swapCount; i++) {
-                        // Select random adjacent frames (avoiding first and last)
-                        const idx = Math.floor(Math.random() * (frameFiles.length - 3)) + 1;
-                        
-                        // Swap the files by renaming them with temporary names
-                        const tempName1 = `temp1_${i}_${frameFiles[idx]}`;
-                        const tempName2 = `temp2_${i}_${frameFiles[idx+1]}`;
-                        
-                        fs.renameSync(
-                            path.join(tempDir, frameFiles[idx]), 
-                            path.join(tempDir, tempName1)
-                        );
-                        fs.renameSync(
-                            path.join(tempDir, frameFiles[idx+1]), 
-                            path.join(tempDir, tempName2)
-                        );
-                        
-                        // Swap them back with opposite names
-                        fs.renameSync(
-                            path.join(tempDir, tempName1),
-                            path.join(tempDir, frameFiles[idx+1])
-                        );
-                        fs.renameSync(
-                            path.join(tempDir, tempName2),
-                            path.join(tempDir, frameFiles[idx])
-                        );
-                    }
-                    
-                    // 3. Check for overlays - but make them OPTIONAL
-                    let useOverlay = false;
-                    let overlayPath = null;
-                    
-                    // Only attempt to use overlays if the folder exists and contains valid files
-                    if (overlaysFolder && fs.existsSync(overlaysFolder)) {
-                        try {
-                            const overlayFiles = fs.readdirSync(overlaysFolder)
-                                .filter(f => f.toLowerCase().endsWith('.mp4') || f.toLowerCase().endsWith('.webm'));
-                                
-                            if (overlayFiles.length > 0) {
-                                const chosenOverlay = overlayFiles[Math.floor(Math.random() * overlayFiles.length)];
-                                overlayPath = path.join(overlaysFolder, chosenOverlay);
-                                
-                                // Only use overlay if the file actually exists
-                                if (fs.existsSync(overlayPath)) {
-                                    useOverlay = true;
-                                    console.log(`📼 Overlay used: ${chosenOverlay}`);
-                                }
-                            }
-                        } catch (err) {
-                            // If we can't access overlays folder, just continue without overlay
-                            console.log('⚠️ Could not access overlays folder, continuing without overlay');
-                        }
-                    } else {
-                        console.log('⚠️ No overlays folder found or it\'s empty, continuing without overlay');
-                    }
-                    
-                    // 4. Prepare audio pitch adjustment
-                    const pitchFactor = (1 + (Math.random() * 0.01) + 0.005).toFixed(5); // 1.005 to 1.015
-                    
-                    // Create filter for reinserting modified frames
-                    // First we need to figure out which frame number corresponds to the source
-                    const frameRegex = /frame_(\d+)\.png/;
-                    const frameNumbers = frameFiles.map(f => {
-                        const match = f.match(frameRegex);
-                        return match ? parseInt(match[1]) : 0;
-                    });
-                    
-                    const minFrameNum = Math.min(...frameNumbers);
-                    
-                    // Recombine video with the modified frames
-                    console.log(`🔄 Recombining video with modified frames and pitch factor ${pitchFactor}...`);
-                    
-                    // Create final command
-                    let command = ffmpeg(inputPath);
-                    
-                    // Add overlay input if available and should be used
-                    if (useOverlay && overlayPath) {
-                        command = command.input(overlayPath);
-                    }
-                    
-                    // Add each modified frame as input
-                    frameFiles.forEach(frame => {
-                        command = command.input(path.join(tempDir, frame));
-                    });
-                    
-                    // Design complex filter based on whether overlay is available
-                    if (useOverlay && overlayPath) {
-                        // With overlay
-                        command
-                            .complexFilter([
-                                `[0:v]split=2[mainvid][extractsec];` +
-                                `[extractsec]trim=start_frame=${extractStart}:end_frame=${extractStart + frameCount},setpts=PTS-STARTPTS[extract];` +
-                                // Replace extracted section with modified frames
-                                `[2:v][3:v][4:v][5:v][6:v][7:v][8:v][9:v][10:v][11:v][12:v][13:v][14:v][15:v][16:v][17:v][18:v][19:v][20:v][21:v]` +
-                                `concat=n=${frameCount}:v=1:a=0[modified];` +
-                                // Cut main video into three parts and insert modified section
-                                `[mainvid]trim=0:${extractStart/fps},setpts=PTS-STARTPTS[part1];` +
-                                `[mainvid]trim=start_frame=${extractStart + frameCount}:end_frame=${totalFrames},setpts=PTS-STARTPTS[part3];` +
-                                `[part1][modified][part3]concat=n=3:v=1:a=0[newvid];` +
-                                // Apply overlay
-                                `[newvid][1:v]overlay=format=auto:alpha=0.3[finalvid]`
-                            ], 'finalvid')
-                            .map('finalvid')
-                            .map('0:a');
-                    } else {
-                        // Without overlay, just do frame replacement
-                        command
-                            .complexFilter([
-                                `[0:v]split=2[mainvid][extractsec];` +
-                                `[extractsec]trim=start_frame=${extractStart}:end_frame=${extractStart + frameCount},setpts=PTS-STARTPTS[extract];` +
-                                // Replace extracted section with modified frames
-                                `[2:v][3:v][4:v][5:v][6:v][7:v][8:v][9:v][10:v][11:v][12:v][13:v][14:v][15:v][16:v][17:v][18:v][19:v][20:v][21:v]` +
-                                `concat=n=${frameCount}:v=1:a=0[modified];` +
-                                // Cut main video into three parts and insert modified section
-                                `[mainvid]trim=0:${extractStart/fps},setpts=PTS-STARTPTS[part1];` +
-                                `[mainvid]trim=start_frame=${extractStart + frameCount}:end_frame=${totalFrames},setpts=PTS-STARTPTS[part3];` +
-                                `[part1][modified][part3]concat=n=3:v=1:a=0[finalvid]`
-                            ], 'finalvid')
-                            .map('finalvid')
-                            .map('0:a');
-                    }
-                    
-                    // Apply audio pitch adjustment
-                    command.audioFilters([
-                        {
-                            filter: 'asetrate',
-                            options: [`48000*${pitchFactor}`]
-                        },
-                        {
-                            filter: 'aresample',
-                            options: ['48000'] 
-                        }
-                    ]);
-                    
-                    // Set output options
-                    command
-                        .outputOptions([
-                            '-c:v', 'libx264',
-                            '-c:a', 'aac',
-                            '-b:v', '2000k',
-                            '-preset', 'fast',
-                            '-movflags', '+faststart'
-                        ]);
-                        
-                    // Add random metadata similar to Python version
-                    const randomMetadata = generateRandomMetadata();
-                    command
-                        .addOutputOption('-metadata', `title=${name}_fresh_edit_${randomId}`)
-                        .addOutputOption('-metadata', `comment=Processed with stealth rehash script`)
-                        .addOutputOption('-metadata', `date=${randomMetadata.date}`)
-                        .addOutputOption('-metadata', `software=${randomMetadata.software}`);
-                    
-                    // Process and save the output
-                    command
-                        .on('start', (cmdline) => {
-                            console.log(`🚀 FFmpeg command: ${cmdline}`);
-                        })
-                        .on('progress', (progress) => {
-                            if (progress.percent) {
-                                console.log(`⏳ Rehashing progress: ${Math.round(progress.percent)}%`);
-                            }
-                        })
-                        .on('error', (err, stdout, stderr) => {
-                            console.error('❌ FFmpeg rehash error:', err);
-                            if (stderr) console.error(stderr);
-                            
-                            // Clean up temp directory
-                            try {
-                                fs.rmdirSync(tempDir, { recursive: true });
-                            } catch (cleanupErr) {
-                                console.error('Error cleaning up temp directory:', cleanupErr);
-                            }
-                            reject(err);
-                        })
-                        .on('end', () => {
-                            console.log('✅ Video rehash completed successfully');
-                            
-                            // Clean up temp directory
-                            try {
-                                fs.rmdirSync(tempDir, { recursive: true });
-                            } catch (cleanupErr) {
-                                console.error('Error cleaning up temp directory:', cleanupErr);
-                            }
-                            resolve(outputPath);
-                        })
-                        .save(outputPath);
-                });
-        });
+            })
+            .on('end', () => {
+                console.log('✅ Video rehash completed successfully');
+                resolve(outputPath);
+            })
+            .save(outputPath);
     });
 }
 
