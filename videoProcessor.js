@@ -631,31 +631,31 @@ async function applyTextOverlay(inputPath, outputPath, text) {
             resolve(inputPath);
         }, 5 * 60 * 1000);
         
-        // Apply text overlay using drawtext filter
+        // Apply text overlay using drawtext filter with LARGER size
         command
             .videoFilters([
                 {
                     filter: 'drawbox',
                     options: {
-                        x: 'w-max(300,tw+40)-10',  // Position box for text (dynamic width based on text width)
-                        y: '10',                  // 10px from top
-                        w: 'max(300,tw+40)',      // Dynamic width based on text width
-                        h: '60',                  // Fixed height
-                        color: 'black@0.5',       // Semi-transparent black
-                        t: 'fill'                 // Fill the box
+                        x: 'w-max(400,tw+60)-10',  // Position box for text (wider with larger text)
+                        y: '10',                   // 10px from top
+                        w: 'max(400,tw+60)',       // Width based on larger text
+                        h: '80',                   // Taller box for larger text
+                        color: 'black@0.5',        // Semi-transparent black
+                        t: 'fill'                  // Fill the box
                     }
                 },
                 {
                     filter: 'drawtext',
                     options: {
-                        text: text,              // The text to display
-                        fontsize: 32,            // Reasonable size for text
-                        fontcolor: 'white',      // White text for visibility
-                        x: 'w-tw-30',            // Position text (right-aligned)
-                        y: '30',                 // Centered vertically in the box
+                        text: text,               // The text to display
+                        fontsize: 48,             // BIGGER font (increased from 32)
+                        fontcolor: 'white',       // White text for visibility
+                        x: 'w-tw-30',             // Position text (right-aligned)
+                        y: '40',                  // Centered vertically in the larger box
                         shadowcolor: 'black@0.5', // Shadow for better visibility
-                        shadowx: 2,
-                        shadowy: 2,
+                        shadowx: 3,               // Stronger shadow
+                        shadowy: 3,
                     }
                 }
             ])
@@ -700,8 +700,7 @@ async function applyEmojiImageOverlay(inputPath, outputPath, textWatermark) {
                 console.log(`Created emoji directory: ${emojiDir}`);
             } catch (dirError) {
                 console.error(`Failed to create emoji directory: ${dirError.message}`);
-                console.log("Continuing without emoji watermark");
-                return resolve(inputPath);
+                return reject(dirError);
             }
         }
         
@@ -796,10 +795,11 @@ async function applyEmojiImageOverlay(inputPath, outputPath, textWatermark) {
                 }, 5 * 60 * 1000);
                 
                 // Create a more reliable filter complex syntax - use a much simpler approach
+                // INCREASE SIZE: Change scale from 216x216 to 400x400 (almost double size)
                 command
                     .outputOptions([
-                        // Most basic overlay possible for maximum compatibility
-                        '-filter_complex', '[0:v][1:v]overlay=W-w-20:20',
+                        // Most basic overlay possible for maximum compatibility with BIGGER size
+                        '-filter_complex', '[1:v]scale=400:400[emoji];[0:v][emoji]overlay=main_w-400-20:20',
                         '-c:a', 'copy',  // Copy audio stream
                         '-preset', 'ultrafast'  // Use fastest encoding
                     ])
@@ -864,16 +864,16 @@ async function retryWithSimpleOverlay(inputPath, outputPath, emojiImagePath) {
             const width = videoStream.width;
             const height = videoStream.height;
             
-            // Calculate position (right corner, 20px from edge)
-            const posX = width - 216 - 20;
+            // Calculate position with BIGGER emoji (400x400)
+            const posX = width - 400 - 20; // Adjusted for new size
             const posY = 20;
             
             // Create command with absolute coordinates
             const command = ffmpeg(inputPath)
                 .input(emojiImagePath)
                 .outputOptions([
-                    // Use absolute coordinates instead of expressions
-                    '-filter_complex', `[1:v]scale=216:216[emoji];[0:v][emoji]overlay=${posX}:${posY}`,
+                    // Use absolute coordinates with larger size
+                    '-filter_complex', `[1:v]scale=400:400[emoji];[0:v][emoji]overlay=${posX}:${posY}`,
                     '-c:a', 'copy',
                     '-preset', 'ultrafast'
                 ])
