@@ -129,7 +129,9 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
     eqMidLevel = null,
     eqHighLevel = null,
     compression = null,
-    deEssing = null) {
+    deEssing = null,
+    // New text watermark parameter
+    textWatermark = null) {
     
     return new Promise((resolve, reject) => {
         // Apply limits to parameters
@@ -209,8 +211,12 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                     '-movflags +faststart' // Optimize for streaming
                 ]);
 
-            // Apply video filters
-            command.videoFilters([
+            // Get video dimensions for positioning the text watermark
+            const width = videoStream.width || 1920;
+            const height = videoStream.height || 1080;
+            
+            // Prepare video filters array
+            let videoFilters = [
                 {
                     filter: 'setpts',
                     options: `${1/speedMultiplier}*PTS` // Speed adjustment for video
@@ -224,7 +230,44 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                     filter: 'drawgrid',
                     options: `width=10:height=10:thickness=1:color=0x00000001` // Nearly invisible grid
                 }
-            ]);
+            ];
+            
+            // Add text watermark if provided
+            if (textWatermark) {
+                console.log(`Adding text/emoji watermark: ${textWatermark}`);
+                
+                // Calculate position in the bottom right corner with a small margin
+                // We'll use 10px margins from the edges
+                const x = width - 10;
+                const y = height - 10;
+                
+                // Add drawtext filter for the watermark
+                videoFilters.push({
+                    filter: 'drawtext',
+                    options: {
+                        text: textWatermark,
+                        fontsize: Math.min(height / 20, 36), // Size proportional to video height, max 36
+                        fontcolor: 'white@0.75', // Semi-transparent white
+                        x: `${x}`,
+                        y: `${y}`,
+                        shadowcolor: 'black@0.5', // Add shadow for better visibility
+                        shadowx: 2,
+                        shadowy: 2,
+                        // Position text from the right bottom corner (position it x pixels from right, y from bottom)
+                        box: 1,
+                        boxcolor: 'black@0.2', // Slight background box for better visibility
+                        boxborderw: 5,
+                        // Right and bottom aligned
+                        fix_bounds: true, // Ensure it stays within frame
+                        // Position from the bottom right
+                        x: `w-tw-10`, // 10px from right edge
+                        y: `h-th-10`  // 10px from bottom edge
+                    }
+                });
+            }
+            
+            // Apply video filters
+            command.videoFilters(videoFilters);
 
             // Create a clean array of audio filters with proper ordering
             const audioFilters = [];
@@ -435,7 +478,7 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
 }
 
 // Micro-subtle rehash function for cloud environments
-async function applyRehash(inputPath, outputPath, overlaysFolder) {
+async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark = null) {
     return new Promise((resolve, reject) => {
         // Generate random ID
         const randomId = Math.floor(Math.random() * 1000);
@@ -450,12 +493,12 @@ async function applyRehash(inputPath, outputPath, overlaysFolder) {
         
         console.log(`\n🎬 Processing rehash (micro-subtle): ${basename}`);
         
-        // MICRO-SUBTLE VALUES:
+        // ULTRA-SUBTLE VALUES:
         // Use extremely small variation values that are virtually imperceptible
         // but still create unique digital fingerprints
         
-        // Micro-subtle pitch adjustment (0.01% to 0.05% range instead of 0.1%-0.3%)
-        const pitchFactor = (1 + (Math.random() * 0.0004) + 0.0001).toFixed(6);
+        // Ultra-subtle pitch adjustment - reduced by 10x (0.001% to 0.005% range instead of 0.01%-0.05%)
+        const pitchFactor = (1 + (Math.random() * 0.00004) + 0.00001).toFixed(8);
         
         // Micro-subtle FPS variations (only ±0.01 instead of ±0.05)
         const originalFps = 30; // We'll stay extremely close to original
@@ -464,83 +507,131 @@ async function applyRehash(inputPath, outputPath, overlaysFolder) {
         // Micro-subtle PTS adjustments (0.005% to 0.01% instead of 0.05%-0.1%)
         const ptsVar = 1 + (Math.random() * 0.00005 + 0.00005);
         
-        console.log(`Using micro-subtle variations: FPS=${fpsVar.toFixed(4)}, PTS=${ptsVar.toFixed(6)}, Pitch=${pitchFactor}`);
+        console.log(`Using ultra-subtle variations: FPS=${fpsVar.toFixed(4)}, PTS=${ptsVar.toFixed(6)}, Pitch=${pitchFactor}`);
         
-        // Create command with the simplest possible approach
-        let command = ffmpeg(inputPath);
-        
-        // Instead of changing the FPS directly (which might be noticeable),
-        // just preserve the original and focus on metadata changes and tiny audio adjustments
-        command.videoFilters([
-            {
-                filter: 'setpts',
-                options: `${ptsVar}*PTS` // Extremely minimal timing adjustment
+        // First get video dimensions for text positioning
+        ffmpeg.ffprobe(inputPath, (err, metadata) => {
+            if (err) {
+                console.error('Error getting video metadata:', err);
+                reject(err);
+                return;
             }
-        ]);
-        
-        // Audio filters: micro-subtle pitch adjustment
-        command.audioFilters([
-            {
-                filter: 'asetrate',
-                options: [`48000*${pitchFactor}`]
-            },
-            {
-                filter: 'aresample',
-                options: ['48000']
+            
+            // Find the video stream
+            const videoStream = metadata.streams.find(stream => stream.codec_type === 'video');
+            if (!videoStream) {
+                console.error('No video stream found');
+                reject(new Error('No video stream found'));
+                return;
             }
-        ]);
-        
-        // Set output options - use higher quality to minimize compression artifacts
-        command
-            .outputOptions([
-                '-c:v', 'libx264',
-                '-c:a', 'aac',
-                '-b:v', '2000k',
-                '-preset', 'ultrafast',
-                '-movflags', '+faststart',
-                '-crf', '18' // Higher quality to minimize visible changes
+            
+            // Get video dimensions
+            const width = videoStream.width || 1920;
+            const height = videoStream.height || 1080;
+            
+            // Create command with the simplest possible approach
+            let command = ffmpeg(inputPath);
+            
+            // Prepare video filters
+            let videoFilters = [
+                {
+                    filter: 'setpts',
+                    options: `${ptsVar}*PTS` // Extremely minimal timing adjustment
+                }
+            ];
+            
+            // Add text watermark if provided
+            if (textWatermark) {
+                console.log(`Adding text/emoji watermark: ${textWatermark}`);
+                
+                // Add drawtext filter for the watermark
+                videoFilters.push({
+                    filter: 'drawtext',
+                    options: {
+                        text: textWatermark,
+                        fontsize: Math.min(height / 20, 36), // Size proportional to video height, max 36
+                        fontcolor: 'white@0.75', // Semi-transparent white
+                        shadowcolor: 'black@0.5', // Add shadow for better visibility
+                        shadowx: 2,
+                        shadowy: 2,
+                        box: 1,
+                        boxcolor: 'black@0.2', // Slight background box for better visibility
+                        boxborderw: 5,
+                        fix_bounds: true, // Ensure it stays within frame
+                        // Position from the bottom right
+                        x: 'w-tw-10', // 10px from right edge
+                        y: 'h-th-10'  // 10px from bottom edge
+                    }
+                });
+            }
+            
+            // Apply video filters
+            command.videoFilters(videoFilters);
+            
+            // Audio filters: ultra-subtle pitch adjustment - almost imperceptible but still making data unique
+            command.audioFilters([
+                {
+                    filter: 'asetrate',
+                    options: [`48000*${pitchFactor}`]
+                },
+                {
+                    filter: 'aresample',
+                    options: ['48000']
+                }
             ]);
             
-        // Add random metadata (this is the primary way we create uniqueness)
-        const randomMetadata = generateRandomMetadata();
-        command
-            .addOutputOption('-metadata', `title=${name}_edit_${randomId}`)
-            .addOutputOption('-metadata', `comment=Processed video`)
-            .addOutputOption('-metadata', `date=${randomMetadata.date}`)
-            .addOutputOption('-metadata', `year=${randomMetadata.year}`)
-            .addOutputOption('-metadata', `device_model=${randomMetadata.device_model}`)
-            .addOutputOption('-metadata', `encoder=${randomMetadata.encoder}`)
-            .addOutputOption('-metadata', `software=${randomMetadata.software}`)
-            .addOutputOption('-metadata', `resolution=${randomMetadata.resolution}`)
-            .addOutputOption('-metadata', `location=${randomMetadata.location}`)
-            .addOutputOption('-metadata', `gps=${randomMetadata.gps}`)
-            .addOutputOption('-metadata', `audio_codec=${randomMetadata.audio_codec}`)
-            .addOutputOption('-metadata', `audio_sample_rate=${randomMetadata.audio_sample_rate}`)
-            .addOutputOption('-metadata', `audio_bit_rate=${randomMetadata.audio_bit_rate}`)
-            .addOutputOption('-metadata', `audio_equipment=${randomMetadata.audio_equipment}`)
-            .addOutputOption('-metadata', `audio_software=${randomMetadata.audio_software}`);
-        
-        // Process and save the output
-        command
-            .on('start', (cmdline) => {
-                console.log(`🚀 FFmpeg rehash command started`);
-                //console.log(cmdline); // Uncomment to debug
-            })
-            .on('progress', (progress) => {
-                if (progress.percent) {
-                    console.log(`⏳ Rehashing progress: ${Math.round(progress.percent)}%`);
-                }
-            })
-            .on('error', (err, stdout, stderr) => {
-                console.error('❌ FFmpeg rehash error:', err);
-                if (stderr) console.error(stderr);
-                reject(err);
-            })
-            .on('end', () => {
-                console.log('✅ Video rehash completed successfully (changes are virtually imperceptible)');
-                resolve(outputPath);
-            })
-            .save(outputPath);
+            // Set output options - use higher quality to minimize compression artifacts
+            command
+                .outputOptions([
+                    '-c:v', 'libx264',
+                    '-c:a', 'aac',
+                    '-b:v', '2000k',
+                    '-preset', 'ultrafast',
+                    '-movflags', '+faststart',
+                    '-crf', '18' // Higher quality to minimize visible changes
+                ]);
+                
+            // Add random metadata (this is the primary way we create uniqueness)
+            const randomMetadata = generateRandomMetadata();
+            command
+                .addOutputOption('-metadata', `title=${name}_edit_${randomId}`)
+                .addOutputOption('-metadata', `comment=Processed video`)
+                .addOutputOption('-metadata', `date=${randomMetadata.date}`)
+                .addOutputOption('-metadata', `year=${randomMetadata.year}`)
+                .addOutputOption('-metadata', `device_model=${randomMetadata.device_model}`)
+                .addOutputOption('-metadata', `encoder=${randomMetadata.encoder}`)
+                .addOutputOption('-metadata', `software=${randomMetadata.software}`)
+                .addOutputOption('-metadata', `resolution=${randomMetadata.resolution}`)
+                .addOutputOption('-metadata', `location=${randomMetadata.location}`)
+                .addOutputOption('-metadata', `gps=${randomMetadata.gps}`)
+                .addOutputOption('-metadata', `audio_codec=${randomMetadata.audio_codec}`)
+                .addOutputOption('-metadata', `audio_sample_rate=${randomMetadata.audio_sample_rate}`)
+                .addOutputOption('-metadata', `audio_bit_rate=${randomMetadata.audio_bit_rate}`)
+                .addOutputOption('-metadata', `audio_equipment=${randomMetadata.audio_equipment}`)
+                .addOutputOption('-metadata', `audio_software=${randomMetadata.audio_software}`);
+            
+            // Process and save the output
+            command
+                .on('start', (cmdline) => {
+                    console.log(`🚀 FFmpeg rehash command started`);
+                    //console.log(cmdline); // Uncomment to debug
+                })
+                .on('progress', (progress) => {
+                    if (progress.percent) {
+                        console.log(`⏳ Rehashing progress: ${Math.round(progress.percent)}%`);
+                    }
+                })
+                .on('error', (err, stdout, stderr) => {
+                    console.error('❌ FFmpeg rehash error:', err);
+                    if (stderr) console.error(stderr);
+                    reject(err);
+                })
+                .on('end', () => {
+                    console.log('✅ Video rehash completed successfully (changes are virtually imperceptible)');
+                    resolve(outputPath);
+                })
+                .save(outputPath);
+        });
     });
 }
 

@@ -496,6 +496,35 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
                         },
                         optional: true
                     },
+                    // Add a divider for text watermark section
+                    {
+                        type: 'divider'
+                    },
+                    {
+                        type: 'section',
+                        text: {
+                            type: 'mrkdwn',
+                            text: '*Visual Options*'
+                        }
+                    },
+                    // Text Watermark
+                    {
+                        type: 'input',
+                        block_id: 'text_watermark',
+                        element: {
+                            type: 'plain_text_input',
+                            action_id: 'text_watermark_input',
+                            placeholder: {
+                                type: 'plain_text',
+                                text: 'Enter text or emoji (e.g., "© 2024" or "👍")'
+                            }
+                        },
+                        label: {
+                            type: 'plain_text',
+                            text: 'Text/Emoji Watermark'
+                        },
+                        optional: true
+                    },
                     // Note about automatic features
                     {
                         type: 'context',
@@ -547,6 +576,9 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
     let compression = null;
     let deEssing = null;
     
+    // NEW: Extract text watermark
+    let textWatermark = null;
+    
     // Always apply rehash as a standard part of processing
     const shouldRehash = true;
     console.log('Video rehashing is enabled by default');
@@ -575,6 +607,8 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
         eqHighLevel = Math.floor(Math.random() * 11) - 5;
         compression = Math.floor(Math.random() * 15);
         deEssing = Math.floor(Math.random() * 6);
+        
+        // No random watermark - this should be explicitly set by user
     } else {
         // Extract existing video parameters
         const speedInput = view.state.values.speed_adjustment?.speed_input?.value;
@@ -652,12 +686,22 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
         if (deEssingInput && deEssingInput.trim() !== '') {
             deEssing = parseFloat(deEssingInput);
         }
+        
+        // NEW: Extract text watermark
+        const textWatermarkInput = view.state.values.text_watermark?.text_watermark_input?.value;
+        if (textWatermarkInput && textWatermarkInput.trim() !== '') {
+            textWatermark = textWatermarkInput.trim();
+        }
     }
     
     console.log(`Processing parameters: Speed=${speedAdjustment}%, Saturation=${saturation}, Brightness=${brightness}, Contrast=${contrast}, FPS=${fpsAdjustment}%`);
-    // NEW: Log audio parameters
+    // Log audio parameters
     console.log(`Audio parameters: Reverb=${reverbLevel}, Delay=${delayLevel}, Pitch=${pitchShift}, Distortion=${distortion}, NoiseReduction=${noiseReduction}`);
     console.log(`EQ: Low=${eqLowLevel}, Mid=${eqMidLevel}, High=${eqHighLevel}, Compression=${compression}, DeEssing=${deEssing}`);
+    // Log text watermark if present
+    if (textWatermark) {
+        console.log(`Text Watermark: "${textWatermark}"`);
+    }
 
     try {
         // Notify start of processing
@@ -681,7 +725,7 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
                 // Add a small delay between operations
                 await new Promise(resolve => setTimeout(resolve, 1000));
 
-                // Process - passing fpsAdjustment as an additional parameter
+                // Process video with the new textWatermark parameter
                 try {
                     // First apply standard processing
                     await processVideo(
@@ -692,7 +736,7 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
                         brightness, 
                         contrast, 
                         fpsAdjustment,
-                        // NEW: Pass audio parameters
+                        // Audio parameters
                         reverbLevel,
                         delayLevel,
                         pitchShift,
@@ -702,14 +746,17 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
                         eqMidLevel,
                         eqHighLevel,
                         compression,
-                        deEssing
+                        deEssing,
+                        // Text watermark parameter
+                        textWatermark
                     );
                     console.log('Processing completed for:', videoInfo.file.name);
                     
                     // Always apply rehash as a standard part of processing
                     console.log('Applying rehash data refresh to:', videoInfo.file.name);
                     const rehashOutputPath = path.join(outputDir, `rehash_${videoInfo.file_id}.mp4`);
-                    await applyRehash(outputPath, rehashOutputPath, overlaysDir);
+                    // Pass the text watermark to the rehash function as well
+                    await applyRehash(outputPath, rehashOutputPath, overlaysDir, textWatermark);
                     
                     // Replace the output path with the rehashed version
                     if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
