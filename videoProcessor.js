@@ -251,18 +251,31 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
             if (textWatermark) {
                 console.log(`Adding text/emoji watermark: ${textWatermark}`);
                 
-                // Add drawtext filter for the watermark
+                // Determine the OS and use appropriate font for emoji
+                // Default Linux emoji fonts paths to try
+                const fontPaths = [
+                    '/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf',     // Noto Color Emoji (common in Ubuntu/Debian)
+                    '/usr/share/fonts/google-noto-emoji/NotoColorEmoji.ttf', // Noto on some distros
+                    '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',     // Fallback to CJK font
+                    '/usr/share/fonts/TTF/DejaVuSans.ttf',                   // DejaVu Sans as fallback
+                    '/usr/share/fonts/liberation/LiberationSans-Regular.ttf' // Liberation Sans as fallback
+                ];
+                
+                // Add drawtext filter for the watermark - without specifying font file
+                // Let FFmpeg use system default for better compatibility
                 videoFilters.push({
                     filter: 'drawtext',
                     options: {
                         text: textWatermark,
-                        fontfile: 'C\\:/Windows/Fonts/seguiemj.ttf', // Windows Segoe UI Emoji font with color support
+                        // No fontfile specified - use system default for better compatibility
                         fontsize: Math.min(height / 6, 120), // MUCH LARGER size for better emoji visibility
-                        fontcolor: 'white@0.0', // Transparent to preserve emoji colors
-                        shadowcolor: 'black@0.4', // Lighter shadow for better color visibility
-                        shadowx: 2,
-                        shadowy: 2,
-                        box: 0, // Remove box for better emoji appearance
+                        fontcolor: 'yellow@1.0', // Use solid yellow color for better visibility
+                        shadowcolor: 'black@0.6', // Stronger shadow for better contrast
+                        shadowx: 3,
+                        shadowy: 3,
+                        box: 1, // Add box back for better visibility
+                        boxcolor: 'black@0.5', // Darker background box for better visibility
+                        boxborderw: 6,
                         fix_bounds: true, // Ensure it stays within frame
                         // Position in the UPPER right corner
                         x: 'w-tw-10', // 10px from right edge
@@ -506,18 +519,20 @@ async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark 
         if (textWatermark) {
             console.log(`Adding text/emoji watermark: ${textWatermark}`);
             
-            // Add drawtext filter with estimated positioning
+            // Add drawtext filter with estimated positioning - without specifying font file
             videoFilters.push({
                 filter: 'drawtext',
                 options: {
                     text: textWatermark,
-                    fontfile: 'C\\:/Windows/Fonts/seguiemj.ttf', // Windows Segoe UI Emoji font with color support
+                    // No fontfile specified - use system default for better compatibility
                     fontsize: 120, // MUCH LARGER fixed size for better emoji visibility
-                    fontcolor: 'white@0.0', // Transparent to preserve emoji colors
-                    shadowcolor: 'black@0.4', // Lighter shadow for better color visibility
-                    shadowx: 2,
-                    shadowy: 2,
-                    box: 0, // Remove box for better emoji appearance
+                    fontcolor: 'yellow@1.0', // Use solid yellow color for better visibility 
+                    shadowcolor: 'black@0.6', // Stronger shadow for better contrast
+                    shadowx: 3,
+                    shadowy: 3,
+                    box: 1, // Add box back for better visibility
+                    boxcolor: 'black@0.5', // Darker background box for better visibility
+                    boxborderw: 6,
                     fix_bounds: true, // Ensure it stays within frame
                     // Position in the UPPER right corner
                     x: 'w-tw-10', // 10px from right edge
