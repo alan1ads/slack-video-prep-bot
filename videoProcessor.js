@@ -484,19 +484,18 @@ async function applyRehash(inputPath, outputPath, overlaysFolder) {
         // Create command
         let command = ffmpeg(inputPath);
         
-        // Add overlay if available
+        // MODIFIED APPROACH: Simplified processing strategy depending on overlay
         if (useOverlay && overlayPath) {
-            command = command.input(overlayPath);
-            
-            // Use complex filter to handle both overlay and framerate adjustments in one filter chain
-            command.complexFilter([
-                // Apply framerate variation to main video
-                `[0:v]fps=fps=${fpsVar},setpts=${ptsVar}*PTS[mainv];`,
-                // Overlay the second input
-                `[mainv][1:v]overlay=format=auto:alpha=0.3[outv]`
-            ], 'outv')
-            .map('outv')
-            .map('0:a');
+            // With overlay - use a simple approach with filter_complex as a string option
+            // This avoids the fluent-ffmpeg complexFilter syntax issues
+            command = ffmpeg(inputPath)
+                .input(overlayPath)
+                .outputOptions([
+                    // Apply framerate variation and overlay in a direct filter_complex option
+                    `-filter_complex "[0:v]fps=fps=${fpsVar},setpts=${ptsVar}*PTS[v1];[v1][1:v]overlay=format=auto:alpha=0.3[outv]"`,
+                    '-map "[outv]"',
+                    '-map 0:a'
+                ]);
         } else {
             // No overlay - we can use simpler video filters
             command.videoFilters([
