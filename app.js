@@ -104,6 +104,9 @@ app.command('/videoprep', async ({ command, ack, client }) => {
     try {
         await ack();
         
+        // Log the channel ID for debugging
+        console.log(`Command triggered in channel: ${command.channel_id}`);
+        
         // Clear any existing pending videos for this channel
         pendingVideos.set(command.channel_id, []);
 
@@ -128,6 +131,8 @@ app.command('/videoprep', async ({ command, ack, client }) => {
                                 text: "Process Videos",
                                 emoji: true
                             },
+                            // Store the channel ID in the button metadata
+                            value: command.channel_id,
                             action_id: "process_multiple_videos"
                         }
                     ]
@@ -206,26 +211,32 @@ app.event('file_shared', async ({ event, client }) => {
 app.action('process_multiple_videos', async ({ ack, body, client }) => {
     await ack();
     
-    // Log the current state of the system
+    // Extract the correct channel ID from multiple possible sources
+    // This ensures we always get the right one regardless of context
+    const channelId = body.actions[0].value || body.channel.id || body.container.channel_id;
+    
+    // Log ALL possible channel IDs for debugging
     console.log('==== PROCESSING VIDEOS ====');
-    console.log(`Action triggered from channel: ${body.channel.id}`);
+    console.log(`Action triggered with button value: ${body.actions[0].value}`);
+    console.log(`Action body.channel.id: ${body.channel?.id}`);
+    console.log(`Action body.container.channel_id: ${body.container?.channel_id}`);
+    console.log(`Using channel ID: ${channelId}`);
     console.log(`Pending videos map has ${pendingVideos.size} channels`);
     
     // Dump the entire map for debugging
-    console.log('Full pending videos map:');
-    pendingVideos.forEach((videos, channelId) => {
-        console.log(`Channel ${channelId}: ${videos.length} videos`);
+    console.log('Full pending videos map contents:');
+    pendingVideos.forEach((videos, mapChannelId) => {
+        console.log(`Channel ${mapChannelId}: ${videos.length} videos ${mapChannelId === channelId ? '(MATCH)' : '(NO MATCH)'}`);
     });
     
-    // Improve the retry function with longer delays and better debugging
+    // Improve the retry function with correct channel ID
     const checkForVideos = async (attempts = 0) => {
-        const channelId = body.channel.id;
         let channelVideos = pendingVideos.get(channelId) || [];
         
         // Log the current state for debugging
         console.log(`Checking for videos - attempt ${attempts + 1}. Found: ${channelVideos.length} videos for channel ${channelId}`);
         
-        if (channelVideos.length === 0 && attempts < 5) {  // Increase max attempts to 5
+        if (channelVideos.length === 0 && attempts < 5) {
             // If no videos found on first try, wait a moment and try again
             console.log(`No videos found for channel ${channelId}, waiting for retrieval...`);
             
@@ -255,36 +266,39 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
         return channelVideos;
     };
     
-    // Check for videos with improved retry mechanism
+    // Check for videos with improved channel ID handling
     const channelVideos = await checkForVideos();
     
     if (channelVideos.length === 0) {
-        console.log(`No videos found after all retries for channel ${body.channel.id}`);
+        console.log(`No videos found after all retries for channel ${channelId}`);
         
         // Check if there are videos in other channels that might have been misplaced
         let foundInOtherChannels = false;
-        pendingVideos.forEach((videos, channelId) => {
-            if (channelId !== body.channel.id && videos.length > 0) {
-                console.log(`Found ${videos.length} videos in channel ${channelId} instead`);
+        let otherChannelsWithVideos = [];
+        pendingVideos.forEach((videos, mapChannelId) => {
+            if (mapChannelId !== channelId && videos.length > 0) {
+                console.log(`Found ${videos.length} videos in channel ${mapChannelId} instead`);
                 foundInOtherChannels = true;
+                otherChannelsWithVideos.push({channel: mapChannelId, count: videos.length});
             }
         });
         
         // Send a more helpful message
         let message = "No videos found to process. Please upload some videos first!";
         if (foundInOtherChannels) {
-            message += " (Note: There are videos in other channels, but not in this one)";
+            message += " (Note: There are videos in other channels that I can't access from here)";
+            console.log("Videos found in other channels:", JSON.stringify(otherChannelsWithVideos));
         }
         
         await client.chat.postMessage({
-            channel: body.channel.id,
+            channel: channelId,
             text: message
         });
         return;
     }
     
     // Log that we found videos and proceed
-    console.log(`Found ${channelVideos.length} videos to process in channel ${body.channel.id}`);
+    console.log(`Found ${channelVideos.length} videos to process in channel ${channelId}`);
     
     try {
         await client.views.open({
@@ -654,7 +668,8 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
                         ]
                     }
                 ],
-                private_metadata: body.channel.id
+                // Store the correct channel ID in the modal's private metadata
+                private_metadata: channelId
             }
         });
     } catch (error) {
