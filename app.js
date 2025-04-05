@@ -2,7 +2,13 @@ const { App } = require('@slack/bolt');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const { processVideo, applyRehash } = require('./videoProcessor');
+const { 
+    processVideo, 
+    applyRehash, 
+    applyWatermark, 
+    applyTextOverlay, 
+    applyEmojiImageOverlay 
+} = require('./videoProcessor');
 const https = require('https');
 require('dotenv').config();
 
@@ -136,6 +142,9 @@ app.command('/videoprep', async ({ command, ack, client }) => {
 // Handle file sharing
 app.event('file_shared', async ({ event, client }) => {
     try {
+        // Log the event for debugging
+        console.log(`File shared event received. Channel ID: ${event.channel_id}, File ID: ${event.file_id}`);
+        
         const result = await client.files.info({
             file: event.file_id
         });
@@ -143,12 +152,13 @@ app.event('file_shared', async ({ event, client }) => {
         const file = result.file;
         
         // Skip if this is a processed video (check the filename)
-        if (file.name.startsWith('Processed_')) {
+        if (file.name && file.name.startsWith('Processed_')) {
             console.log('Skipping processed video:', file.name);
             return;
         }
 
-        if (!file.mimetype.startsWith('video/')) {
+        if (!file.mimetype || !file.mimetype.startsWith('video/')) {
+            console.log(`File type not supported: ${file.mimetype}`);
             await client.chat.postMessage({
                 channel: event.channel_id,
                 text: "Please share only video files."
@@ -156,13 +166,32 @@ app.event('file_shared', async ({ event, client }) => {
             return;
         }
 
-        // Add to pending videos
+        // Add to pending videos with more reliable structure
+        if (!event.channel_id) {
+            console.error('Missing channel ID in file_shared event');
+            return;
+        }
+
+        // Add to pending videos with debug info
         let channelVideos = pendingVideos.get(event.channel_id) || [];
         channelVideos.push({
             file: file,
-            file_id: event.file_id
+            file_id: event.file_id,
+            added_time: new Date().toISOString()
         });
         pendingVideos.set(event.channel_id, channelVideos);
+        
+        console.log(`Added video to queue for channel ${event.channel_id}. Queue now has ${channelVideos.length} videos`);
+        console.log(`Pending videos map now has ${pendingVideos.size} channels`);
+
+        // Print more detailed queue info for debugging
+        console.log('Video Queue Contents:');
+        pendingVideos.forEach((videos, channelId) => {
+            console.log(`Channel ${channelId}: ${videos.length} videos`);
+            videos.forEach((vid, idx) => {
+                console.log(`  Video ${idx+1}: ${vid.file.name} (ID: ${vid.file_id})`);
+            });
+        });
 
         await client.chat.postMessage({
             channel: event.channel_id,
@@ -170,37 +199,52 @@ app.event('file_shared', async ({ event, client }) => {
         });
 
     } catch (error) {
-        console.error(error);
+        console.error('Error handling file_shared event:', error);
     }
 });
 
 app.action('process_multiple_videos', async ({ ack, body, client }) => {
     await ack();
     
-    // Function to check for videos with retry
+    // Log the current state of the system
+    console.log('==== PROCESSING VIDEOS ====');
+    console.log(`Action triggered from channel: ${body.channel.id}`);
+    console.log(`Pending videos map has ${pendingVideos.size} channels`);
+    
+    // Dump the entire map for debugging
+    console.log('Full pending videos map:');
+    pendingVideos.forEach((videos, channelId) => {
+        console.log(`Channel ${channelId}: ${videos.length} videos`);
+    });
+    
+    // Improve the retry function with longer delays and better debugging
     const checkForVideos = async (attempts = 0) => {
-        let channelVideos = pendingVideos.get(body.channel.id) || [];
+        const channelId = body.channel.id;
+        let channelVideos = pendingVideos.get(channelId) || [];
         
         // Log the current state for debugging
-        console.log(`Checking for videos - attempt ${attempts + 1}. Found: ${channelVideos.length} videos`);
+        console.log(`Checking for videos - attempt ${attempts + 1}. Found: ${channelVideos.length} videos for channel ${channelId}`);
         
-        if (channelVideos.length === 0 && attempts < 3) {
+        if (channelVideos.length === 0 && attempts < 5) {  // Increase max attempts to 5
             // If no videos found on first try, wait a moment and try again
-            console.log("No videos found, waiting for file system to update...");
+            console.log(`No videos found for channel ${channelId}, waiting for retrieval...`);
             
-            // Send a temporary message to the user
+            // Only send a message on the first attempt
             if (attempts === 0) {
                 await client.chat.postMessage({
-                    channel: body.channel.id,
-                    text: "Starting to process 0 videos... This might take a while."
+                    channel: channelId,
+                    text: "Looking for videos to process..."
                 });
             }
             
-            // Wait 1.5 seconds before retrying (increase with each attempt)
-            await new Promise(resolve => setTimeout(resolve, 1500 * (attempts + 1)));
+            // Longer delay between attempts (3 seconds × attempt number)
+            const delayTime = 3000 * (attempts + 1);
+            console.log(`Waiting ${delayTime}ms before retry ${attempts + 1}...`);
+            await new Promise(resolve => setTimeout(resolve, delayTime));
             
             // Refresh the channel videos
-            channelVideos = pendingVideos.get(body.channel.id) || [];
+            channelVideos = pendingVideos.get(channelId) || [];
+            console.log(`After delay: found ${channelVideos.length} videos for channel ${channelId}`);
             
             // If still no videos, retry
             if (channelVideos.length === 0) {
@@ -211,17 +255,37 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
         return channelVideos;
     };
     
-    // Check for videos with retry mechanism
+    // Check for videos with improved retry mechanism
     const channelVideos = await checkForVideos();
     
     if (channelVideos.length === 0) {
+        console.log(`No videos found after all retries for channel ${body.channel.id}`);
+        
+        // Check if there are videos in other channels that might have been misplaced
+        let foundInOtherChannels = false;
+        pendingVideos.forEach((videos, channelId) => {
+            if (channelId !== body.channel.id && videos.length > 0) {
+                console.log(`Found ${videos.length} videos in channel ${channelId} instead`);
+                foundInOtherChannels = true;
+            }
+        });
+        
+        // Send a more helpful message
+        let message = "No videos found to process. Please upload some videos first!";
+        if (foundInOtherChannels) {
+            message += " (Note: There are videos in other channels, but not in this one)";
+        }
+        
         await client.chat.postMessage({
             channel: body.channel.id,
-            text: "No videos found to process. Please upload some videos first!"
+            text: message
         });
         return;
     }
-
+    
+    // Log that we found videos and proceed
+    console.log(`Found ${channelVideos.length} videos to process in channel ${body.channel.id}`);
+    
     try {
         await client.views.open({
             trigger_id: body.trigger_id,
