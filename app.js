@@ -696,8 +696,15 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
     // Extract channel ID
     const channelId = body.view.private_metadata || body.channel.id;
     
-    // Get the pending videos for this channel
-    const channelVideos = pendingVideos.get(channelId) || [];
+    // Get the pending videos for this channel - CRITICAL CHANGE: retrieve latest state
+    let channelVideos = pendingVideos.get(channelId) || [];
+    
+    // Double-check video count with a fresh look at the queue
+    console.log(`Modal submitted for channel ${channelId}, found ${channelVideos.length} videos in queue`);
+    console.log('Current video queue state:');
+    pendingVideos.forEach((videos, mapChannelId) => {
+        console.log(`Channel ${mapChannelId}: ${videos.length} videos ${mapChannelId === channelId ? '(MATCH)' : ''}`);
+    });
     
     // Check if random mode is enabled
     const useRandomMode = view.state.values.random_mode?.random_mode_checkbox?.selected_options?.length > 0;
@@ -849,10 +856,25 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
     }
 
     try {
-        // Notify start of processing
+        // Make sure we have the latest videos array (could have changed since modal opened)
+        channelVideos = pendingVideos.get(channelId) || [];
+        const videoCount = channelVideos.length;
+        
+        // If we have no videos, don't even start
+        if (videoCount === 0) {
+            console.log("No videos in queue, aborting process");
+            await client.chat.postMessage({
+                channel: channelId,
+                text: "No videos found to process. Please upload some videos first!"
+            });
+            return;
+        }
+        
+        // Notify start of processing with the CORRECT count
+        console.log(`Starting to process ${videoCount} videos for channel ${channelId}`);
         await client.chat.postMessage({
             channel: channelId,
-            text: `Starting to process ${channelVideos.length} videos... This might take a while.`
+            text: `Starting to process ${videoCount} videos... This might take a while.`
         });
 
         // Process videos sequentially with delay between each
@@ -861,11 +883,11 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
                 const inputPath = path.join(inputDir, `input_${videoInfo.file_id}.mp4`);
                 const outputPath = path.join(outputDir, `output_${videoInfo.file_id}.mp4`);
 
-                console.log('Processing video:', videoInfo.file.name);
+                console.log('Processing video:', videoInfo.file?.name || 'Unknown');
                 
                 // Download
                 await downloadFile(videoInfo.file.url_private_download, inputPath);
-                console.log('Download completed for:', videoInfo.file.name);
+                console.log('Download completed for:', videoInfo.file?.name || 'Unknown');
                 
                 // Add a small delay between operations
                 await new Promise(resolve => setTimeout(resolve, 1000));
@@ -895,10 +917,10 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
                         // Text watermark parameter
                         textWatermark
                     );
-                    console.log('Processing completed for:', videoInfo.file.name);
+                    console.log('Processing completed for:', videoInfo.file?.name || 'Unknown');
                     
                     // Always apply rehash as a standard part of processing
-                    console.log('Applying rehash data refresh to:', videoInfo.file.name);
+                    console.log('Applying rehash data refresh to:', videoInfo.file?.name || 'Unknown');
                     const rehashOutputPath = path.join(outputDir, `rehash_${videoInfo.file_id}.mp4`);
                     // Pass the text watermark to the rehash function as well
                     await applyRehash(outputPath, rehashOutputPath, overlaysDir, textWatermark);
@@ -906,26 +928,26 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
                     // Replace the output path with the rehashed version
                     if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
                     fs.renameSync(rehashOutputPath, outputPath);
-                    console.log('Rehash completed for:', videoInfo.file.name);
+                    console.log('Rehash completed for:', videoInfo.file?.name || 'Unknown');
 
                     // Upload
                     await client.files.uploadV2({
                         channel_id: channelId,
                         file: fs.createReadStream(outputPath),
-                        filename: `Processed_${videoInfo.file.name}`,
-                        title: `Processed_${videoInfo.file.name}`
+                        filename: `Processed_${videoInfo.file?.name || 'video.mp4'}`,
+                        title: `Processed_${videoInfo.file?.name || 'video.mp4'}`
                     });
-                    console.log('Upload completed for:', videoInfo.file.name);
+                    console.log('Upload completed for:', videoInfo.file?.name || 'Unknown');
 
                     await client.chat.postMessage({
                         channel: channelId,
-                        text: `✅ Processed: ${videoInfo.file.name}`
+                        text: `✅ Processed: ${videoInfo.file?.name || 'Unknown video'}`
                     });
                 } catch (processError) {
                     console.error(`Error processing video: ${processError.message}`);
                     await client.chat.postMessage({
                         channel: channelId,
-                        text: `⚠️ Warning: ${videoInfo.file.name} was too large to process. Try a smaller video.`
+                        text: `⚠️ Warning: ${videoInfo.file?.name || 'A video'} was too large to process. Try a smaller video.`
                     });
                 }
 
@@ -940,7 +962,7 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
                 console.error(`Error processing video ${videoInfo.file_id}:`, error);
                 await client.chat.postMessage({
                     channel: channelId,
-                    text: `❌ Error processing video ${videoInfo.file.name}: ${error.message}`
+                    text: `❌ Error processing video ${videoInfo.file?.name || 'Unknown'}: ${error.message}`
                 });
             }
         }
