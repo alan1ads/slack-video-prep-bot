@@ -2,6 +2,8 @@ const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const https = require('https');
+const { execSync } = require('child_process');
 
 function generateRandomMetadata() {
     // More varied date ranges
@@ -249,39 +251,52 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
             
             // Add text watermark if provided
             if (textWatermark) {
-                console.log(`Adding text/emoji watermark: ${textWatermark}`);
+                console.log(`Adding emoji watermark: ${textWatermark}`);
                 
-                // Determine the OS and use appropriate font for emoji
-                // Default Linux emoji fonts paths to try
-                const fontPaths = [
-                    '/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf',     // Noto Color Emoji (common in Ubuntu/Debian)
-                    '/usr/share/fonts/google-noto-emoji/NotoColorEmoji.ttf', // Noto on some distros
-                    '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',     // Fallback to CJK font
-                    '/usr/share/fonts/TTF/DejaVuSans.ttf',                   // DejaVu Sans as fallback
-                    '/usr/share/fonts/liberation/LiberationSans-Regular.ttf' // Liberation Sans as fallback
-                ];
+                // Create emoji image directory if it doesn't exist
+                const emojiDir = path.join(__dirname, 'emoji_images');
+                if (!fs.existsSync(emojiDir)) {
+                    fs.mkdirSync(emojiDir, { recursive: true });
+                }
                 
-                // Add drawtext filter for the watermark - without specifying font file
-                // Let FFmpeg use system default for better compatibility
-                videoFilters.push({
-                    filter: 'drawtext',
-                    options: {
-                        text: textWatermark,
-                        // No fontfile specified - use system default for better compatibility
-                        fontsize: Math.min(height / 6, 120), // MUCH LARGER size for better emoji visibility
-                        fontcolor: 'yellow@1.0', // Use solid yellow color for better visibility
-                        shadowcolor: 'black@0.6', // Stronger shadow for better contrast
-                        shadowx: 3,
-                        shadowy: 3,
-                        box: 1, // Add box back for better visibility
-                        boxcolor: 'black@0.5', // Darker background box for better visibility
-                        boxborderw: 6,
-                        fix_bounds: true, // Ensure it stays within frame
-                        // Position in the UPPER right corner
-                        x: 'w-tw-10', // 10px from right edge
-                        y: '10'  // 10px from TOP edge
+                // Path to save the emoji image
+                const emojiChar = textWatermark.codePointAt(0);
+                const emojiImagePath = path.join(emojiDir, `emoji_${emojiChar}.png`);
+                
+                // Check if we already have this emoji downloaded
+                if (!fs.existsSync(emojiImagePath)) {
+                    try {
+                        // Try to download the emoji image synchronously before processing
+                        // Use the child_process execSync to run a curl command for simplicity
+                        const emojiCodePoint = textWatermark.codePointAt(0).toString(16);
+                        const emojiUrl = `https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/${emojiCodePoint}.png`;
+                        
+                        console.log(`Downloading emoji from ${emojiUrl}`);
+                        execSync(`curl "${emojiUrl}" -o "${emojiImagePath}"`);
+                        console.log(`Downloaded emoji to ${emojiImagePath}`);
+                    } catch (error) {
+                        console.error('Error downloading emoji:', error);
+                        // Continue without the emoji if download fails
                     }
-                });
+                }
+                
+                // Only add overlay if the emoji image exists
+                if (fs.existsSync(emojiImagePath)) {
+                    // Calculate size based on video dimensions - larger for visibility
+                    const overlaySize = Math.max(80, Math.min(width / 8, height / 8));
+                    
+                    // Add video filter to overlay the emoji
+                    videoFilters.push({
+                        filter: 'overlay',
+                        options: {
+                            x: `main_w-overlay_w-10`,   // 10px from right edge
+                            y: '10',                    // 10px from top edge
+                            eof_action: 'repeat',       // Keep showing the overlay
+                            enable: '1'                 // Always enabled
+                        },
+                        inputs: [emojiImagePath]        // Input the emoji image
+                    });
+                }
             }
             
             // Apply video filters
@@ -517,28 +532,50 @@ async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark 
             
         // Add text watermark if provided
         if (textWatermark) {
-            console.log(`Adding text/emoji watermark: ${textWatermark}`);
+            console.log(`Adding emoji watermark: ${textWatermark}`);
             
-            // Add drawtext filter with estimated positioning - without specifying font file
-            videoFilters.push({
-                filter: 'drawtext',
-                options: {
-                    text: textWatermark,
-                    // No fontfile specified - use system default for better compatibility
-                    fontsize: 120, // MUCH LARGER fixed size for better emoji visibility
-                    fontcolor: 'yellow@1.0', // Use solid yellow color for better visibility 
-                    shadowcolor: 'black@0.6', // Stronger shadow for better contrast
-                    shadowx: 3,
-                    shadowy: 3,
-                    box: 1, // Add box back for better visibility
-                    boxcolor: 'black@0.5', // Darker background box for better visibility
-                    boxborderw: 6,
-                    fix_bounds: true, // Ensure it stays within frame
-                    // Position in the UPPER right corner
-                    x: 'w-tw-10', // 10px from right edge
-                    y: '10'  // 10px from TOP edge
+            // Create emoji image directory if it doesn't exist
+            const emojiDir = path.join(__dirname, 'emoji_images');
+            if (!fs.existsSync(emojiDir)) {
+                fs.mkdirSync(emojiDir, { recursive: true });
+            }
+            
+            // Path to save the emoji image
+            const emojiChar = textWatermark.codePointAt(0);
+            const emojiImagePath = path.join(emojiDir, `emoji_${emojiChar}.png`);
+            
+            // Check if we already have this emoji downloaded
+            if (!fs.existsSync(emojiImagePath)) {
+                try {
+                    // Try to download the emoji image synchronously before processing
+                    // Use the child_process execSync to run a curl command for simplicity
+                    const emojiCodePoint = textWatermark.codePointAt(0).toString(16);
+                    const emojiUrl = `https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/${emojiCodePoint}.png`;
+                    
+                    console.log(`Downloading emoji from ${emojiUrl}`);
+                    execSync(`curl "${emojiUrl}" -o "${emojiImagePath}"`);
+                    console.log(`Downloaded emoji to ${emojiImagePath}`);
+                } catch (error) {
+                    console.error('Error downloading emoji:', error);
+                    // Continue without the emoji if download fails
                 }
-            });
+            }
+            
+            // Only add overlay if the emoji image exists
+            if (fs.existsSync(emojiImagePath)) {
+                // Use the overlay filter with the emoji image
+                command = command.input(emojiImagePath);
+                
+                videoFilters.push({
+                    filter: 'overlay',
+                    options: {
+                        x: 'main_w-overlay_w-10',   // 10px from right edge
+                        y: '10',                    // 10px from top edge
+                        eof_action: 'repeat',       // Keep showing the overlay
+                        enable: '1'                 // Always enabled
+                    }
+                });
+            }
         }
         
         // Apply video filters if needed
