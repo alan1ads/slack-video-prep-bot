@@ -457,17 +457,40 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                     try {
                         // Apply the watermark (works for both emoji and text)
                         console.log('Applying watermark as separate step...');
-                        const result = await applyWatermark(tempPath, finalPath, textWatermark);
                         
-                        // If successful, clean up the temp file and resolve with the final path
-                        if (result === finalPath && fs.existsSync(finalPath)) {
-                            if (fs.existsSync(tempPath)) {
-                                fs.unlinkSync(tempPath);
+                        // Check if it's likely an emoji (single character)
+                        if (textWatermark.length === 1 || textWatermark.length === 2) {
+                            const firstChar = textWatermark.codePointAt(0);
+                            const isEmoji = firstChar > 0x1F000;
+                            
+                            if (isEmoji) {
+                                // Use the direct function call
+                                const result = await applyEmojiImageOverlay(tempPath, finalPath, textWatermark);
+                                if (result === finalPath && fs.existsSync(finalPath)) {
+                                    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+                                    resolve(finalPath);
+                                } else {
+                                    resolve(tempPath);
+                                }
+                            } else {
+                                // Text overlay for single characters
+                                const result = await applyTextOverlay(tempPath, finalPath, textWatermark);
+                                if (result === finalPath && fs.existsSync(finalPath)) {
+                                    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+                                    resolve(finalPath);
+                                } else {
+                                    resolve(tempPath);
+                                }
                             }
-                            resolve(finalPath);
                         } else {
-                            // If watermark failed, use the original processed file
-                            resolve(tempPath);
+                            // Definitely text (multiple characters)
+                            const result = await applyTextOverlay(tempPath, finalPath, textWatermark);
+                            if (result === finalPath && fs.existsSync(finalPath)) {
+                                if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+                                resolve(finalPath);
+                            } else {
+                                resolve(tempPath);
+                            }
                         }
                     } catch (watermarkError) {
                         console.error('Error applying watermark:', watermarkError);
@@ -553,15 +576,50 @@ async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark 
             
             // Step 2: If watermark is requested, apply it to the processed file
             if (textWatermark) {
-                // Use the generalized watermark function that handles both text and emoji
-                const watermarkedPath = await applyWatermark(tempOutputPath, finalOutputPath, textWatermark);
-                
-                // Clean up the temp file
-                if (fs.existsSync(tempOutputPath)) {
-                    fs.unlinkSync(tempOutputPath);
+                try {
+                    // Check if it's an emoji (single character)
+                    if (textWatermark.length === 1 || textWatermark.length === 2) {
+                        const firstChar = textWatermark.codePointAt(0);
+                        const isEmoji = firstChar > 0x1F000;
+                        
+                        if (isEmoji) {
+                            // Use direct function call for emoji
+                            const watermarkedPath = await applyEmojiImageOverlay(tempOutputPath, finalOutputPath, textWatermark);
+                            
+                            // Clean up the temp file
+                            if (fs.existsSync(tempOutputPath)) {
+                                fs.unlinkSync(tempOutputPath);
+                            }
+                            
+                            resolve(watermarkedPath);
+                        } else {
+                            // Use direct function call for text
+                            const watermarkedPath = await applyTextOverlay(tempOutputPath, finalOutputPath, textWatermark);
+                            
+                            // Clean up the temp file
+                            if (fs.existsSync(tempOutputPath)) {
+                                fs.unlinkSync(tempOutputPath);
+                            }
+                            
+                            resolve(watermarkedPath);
+                        }
+                    } else {
+                        // Must be text (multiple characters)
+                        const watermarkedPath = await applyTextOverlay(tempOutputPath, finalOutputPath, textWatermark);
+                        
+                        // Clean up the temp file
+                        if (fs.existsSync(tempOutputPath)) {
+                            fs.unlinkSync(tempOutputPath);
+                        }
+                        
+                        resolve(watermarkedPath);
+                    }
+                } catch (error) {
+                    console.error('Error applying watermark in rehash:', error);
+                    // If watermark fails, just rename the temp file
+                    fs.renameSync(tempOutputPath, finalOutputPath);
+                    resolve(finalOutputPath);
                 }
-                
-                resolve(watermarkedPath);
             } else {
                 // No watermark needed, just rename the temp file
                 fs.renameSync(tempOutputPath, finalOutputPath);
@@ -574,50 +632,7 @@ async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark 
     });
 }
 
-// Rename function to be more general
-async function applyWatermark(inputPath, outputPath, watermarkText) {
-    return new Promise((resolve, reject) => {
-        console.log(`Adding watermark: ${watermarkText}`);
-        
-        // Validate input path exists
-        if (!fs.existsSync(inputPath)) {
-            console.error(`Input file doesn't exist: ${inputPath}`);
-            return resolve(inputPath); // Return original path if input doesn't exist
-        }
-        
-        try {
-            // Check if the watermark is an emoji or regular text
-            const firstChar = watermarkText.codePointAt(0);
-            const isEmoji = firstChar > 0x1F000; // Simple check - Unicode emoji range typically starts around 0x1F000
-            
-            if (isEmoji) {
-                // EMOJI HANDLING - Use image overlay approach
-                applyEmojiImageOverlay(inputPath, outputPath, watermarkText)
-                    .then(result => resolve(result))
-                    .catch(err => {
-                        console.error('Emoji overlay failed, falling back to text:', err);
-                        // If emoji fails, fall back to text rendering
-                        applyTextOverlay(inputPath, outputPath, watermarkText)
-                            .then(result => resolve(result))
-                            .catch(() => resolve(inputPath));
-                    });
-            } else {
-                // TEXT HANDLING - Use drawtext filter
-                applyTextOverlay(inputPath, outputPath, watermarkText)
-                    .then(result => resolve(result))
-                    .catch(err => {
-                        console.error('Text overlay failed:', err);
-                        resolve(inputPath);
-                    });
-            }
-        } catch (unexpectedError) {
-            console.error(`Unexpected error in watermark process: ${unexpectedError.message}`);
-            resolve(inputPath); // Continue without watermark on any unexpected error
-        }
-    });
-}
-
-// Function to apply text watermark using drawtext filter
+// Simplify the text overlay function to use a more compatible approach
 async function applyTextOverlay(inputPath, outputPath, text) {
     return new Promise((resolve, reject) => {
         console.log(`Applying text watermark: "${text}"`);
@@ -631,38 +646,27 @@ async function applyTextOverlay(inputPath, outputPath, text) {
             resolve(inputPath);
         }, 5 * 60 * 1000);
         
-        // Apply text overlay using drawtext filter with LARGER size
+        // Use a much simpler filter syntax with direct string values
+        // This avoids the complex expression parsing that might be causing issues
         command
-            .videoFilters([
-                {
-                    filter: 'drawbox',
-                    options: {
-                        x: 'w-max(400,tw+60)-10',  // Position box for text (wider with larger text)
-                        y: '10',                   // 10px from top
-                        w: 'max(400,tw+60)',       // Width based on larger text
-                        h: '80',                   // Taller box for larger text
-                        color: 'black@0.5',        // Semi-transparent black
-                        t: 'fill'                  // Fill the box
-                    }
-                },
+            .complexFilter([
                 {
                     filter: 'drawtext',
                     options: {
-                        text: text,               // The text to display
-                        fontsize: 48,             // BIGGER font (increased from 32)
-                        fontcolor: 'white',       // White text for visibility
-                        x: 'w-tw-30',             // Position text (right-aligned)
-                        y: '40',                  // Centered vertically in the larger box
-                        shadowcolor: 'black@0.5', // Shadow for better visibility
-                        shadowx: 3,               // Stronger shadow
-                        shadowy: 3,
+                        text: text,
+                        fontsize: 64,
+                        fontcolor: 'white',
+                        box: 1,
+                        boxcolor: 'black@0.5',
+                        boxborderw: 10,
+                        x: 'w-tw-20',
+                        y: '20'
                     }
                 }
             ])
             .outputOptions([
-                '-c:a', 'copy',            // Copy audio stream
-                '-preset', 'ultrafast',    // Use fastest encoding
-                '-movflags', '+faststart'  // Optimize for web playback
+                '-c:a', 'copy',
+                '-preset', 'ultrafast'
             ])
             .on('start', (cmdline) => {
                 console.log('Text overlay command:', cmdline);
@@ -676,7 +680,8 @@ async function applyTextOverlay(inputPath, outputPath, text) {
             .on('error', (err) => {
                 clearTimeout(timeoutId);
                 console.error('Error applying text overlay:', err.message);
-                reject(err);
+                // Instead of rejecting, resolve with the original path
+                resolve(inputPath);
             })
             .on('end', () => {
                 clearTimeout(timeoutId);
