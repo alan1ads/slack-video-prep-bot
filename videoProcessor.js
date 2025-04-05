@@ -457,8 +457,55 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                         
                         console.log('Applying watermark as separate step...');
                         
-                        // Check if it's likely an emoji (single character)
-                        if (textWatermark.length === 1 || textWatermark.length === 2) {
+                        // Check if it contains emoji mixed with text
+                        if (containsEmoji(textWatermark) && textWatermark.length > 2) {
+                            console.log('Mixed emoji and text detected, using specialized handling');
+                            const { emoji, text } = splitEmojiAndText(textWatermark);
+                            
+                            if (emoji) {
+                                // First apply the emoji as an image overlay
+                                const emojiPath = await applyEmojiImageOverlay(tempPath, finalPath, emoji);
+                                
+                                // If text remains, add text overlay on top of emoji overlay
+                                if (text && text.length > 0) {
+                                    const textPath = path.join(path.dirname(finalPath), `text_${Date.now()}${path.extname(finalPath)}`);
+                                    const result = await applyTextOverlay(emojiPath, textPath, text);
+                                    
+                                    // Clean up intermediate files
+                                    if (fs.existsSync(emojiPath) && emojiPath !== tempPath) {
+                                        fs.unlinkSync(emojiPath);
+                                    }
+                                    
+                                    if (result === textPath && fs.existsSync(textPath)) {
+                                        // Rename to final path
+                                        fs.renameSync(textPath, finalPath);
+                                        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+                                        resolve(finalPath);
+                                    } else {
+                                        resolve(tempPath);
+                                    }
+                                } else {
+                                    // Just emoji
+                                    if (emojiPath === finalPath && fs.existsSync(finalPath)) {
+                                        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+                                        resolve(finalPath);
+                                    } else {
+                                        resolve(tempPath);
+                                    }
+                                }
+                            } else {
+                                // Just text (fallback)
+                                const result = await applyTextOverlay(tempPath, finalPath, textWatermark);
+                                if (result === finalPath && fs.existsSync(finalPath)) {
+                                    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+                                    resolve(finalPath);
+                                } else {
+                                    resolve(tempPath);
+                                }
+                            }
+                        }
+                        // Single emoji handling (keep existing code)
+                        else if (textWatermark.length === 1 || textWatermark.length === 2) {
                             const firstChar = textWatermark.codePointAt(0);
                             const isEmoji = firstChar > 0x1F000;
                             
@@ -582,8 +629,57 @@ async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark 
             // Step 2: If watermark is requested, apply it to the processed file
             if (textWatermark) {
                 try {
+                    // Check if it contains emoji mixed with text
+                    if (containsEmoji(textWatermark) && textWatermark.length > 2) {
+                        console.log('Mixed emoji and text detected in rehash, using specialized handling');
+                        const { emoji, text } = splitEmojiAndText(textWatermark);
+                        
+                        if (emoji) {
+                            // First apply the emoji as an image overlay
+                            const emojiPath = await applyEmojiImageOverlay(tempOutputPath, finalOutputPath, emoji);
+                            
+                            // If text remains, add text overlay on top of emoji overlay
+                            if (text && text.length > 0) {
+                                const textPath = path.join(path.dirname(finalOutputPath), `text_${Date.now()}${path.extname(finalOutputPath)}`);
+                                const result = await applyTextOverlay(emojiPath, textPath, text);
+                                
+                                // Clean up intermediate files
+                                if (fs.existsSync(emojiPath) && emojiPath !== tempOutputPath) {
+                                    fs.unlinkSync(emojiPath);
+                                }
+                                
+                                if (fs.existsSync(textPath)) {
+                                    // Rename to final path
+                                    fs.renameSync(textPath, finalOutputPath);
+                                    if (fs.existsSync(tempOutputPath)) fs.unlinkSync(tempOutputPath);
+                                    resolve(finalOutputPath);
+                                } else {
+                                    // Fall back to temp path
+                                    resolve(tempOutputPath);
+                                }
+                            } else {
+                                // Just emoji
+                                if (emojiPath === finalOutputPath && fs.existsSync(finalOutputPath)) {
+                                    if (fs.existsSync(tempOutputPath)) fs.unlinkSync(tempOutputPath);
+                                    resolve(finalOutputPath);
+                                } else {
+                                    resolve(tempOutputPath);
+                                }
+                            }
+                        } else {
+                            // Just text (fallback)
+                            const result = await applyTextOverlay(tempOutputPath, finalOutputPath, textWatermark);
+                            
+                            // Clean up the temp file
+                            if (fs.existsSync(tempOutputPath)) {
+                                fs.unlinkSync(tempOutputPath);
+                            }
+                            
+                            resolve(result);
+                        }
+                    }
                     // Check if it's an emoji (single character)
-                    if (textWatermark.length === 1 || textWatermark.length === 2) {
+                    else if (textWatermark.length === 1 || textWatermark.length === 2) {
                         const firstChar = textWatermark.codePointAt(0);
                         const isEmoji = firstChar > 0x1F000;
                         
@@ -909,6 +1005,33 @@ async function retryWithSimpleOverlay(inputPath, outputPath, emojiImagePath) {
             command.save(outputPath);
         });
     });
+}
+
+// Helper function to check if a string contains emoji
+function containsEmoji(text) {
+    if (!text) return false;
+    // Basic emoji detection - characters in Unicode emoji ranges
+    const emojiRegex = /[\u{1F300}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u;
+    return emojiRegex.test(text);
+}
+
+// Helper function to split emoji and text
+function splitEmojiAndText(text) {
+    if (!text) return { emoji: null, text: null };
+
+    // Extract the first emoji character
+    const emojiMatch = text.match(/[\u{1F300}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u);
+    if (!emojiMatch) return { emoji: null, text: text };
+    
+    const emoji = emojiMatch[0];
+    
+    // Remove the emoji from the text
+    const textWithoutEmoji = text.replace(emojiMatch[0], '').trim();
+    
+    return {
+        emoji: emoji,
+        text: textWithoutEmoji.length > 0 ? textWithoutEmoji : null
+    };
 }
 
 // Add export for new helper functions to make them testable
