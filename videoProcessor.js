@@ -434,7 +434,7 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
     });
 }
 
-// New function to apply rehash effects (simplified for cloud environments)
+// Fix the rehash function to properly handle the filters
 async function applyRehash(inputPath, outputPath, overlaysFolder) {
     return new Promise((resolve, reject) => {
         // Generate random ID
@@ -474,12 +474,12 @@ async function applyRehash(inputPath, outputPath, overlaysFolder) {
             }
         }
 
-        // Instead of complex frame extraction and swapping,
-        // we'll use a simpler approach that creates a subtle frame rate variation
-        // and applies a slight pitch adjustment - achieving a similar effect with less processing
-        
         // Prepare audio pitch adjustment (same as before: 1.005 to 1.015)
         const pitchFactor = (1 + (Math.random() * 0.01) + 0.005).toFixed(5);
+        
+        // Generate the subtle FPS variation values
+        const fpsVar = Math.random() < 0.5 ? 29.97 : 30.01;
+        const ptsVar = 1 + (Math.random() * 0.005);
         
         // Create command
         let command = ffmpeg(inputPath);
@@ -487,34 +487,29 @@ async function applyRehash(inputPath, outputPath, overlaysFolder) {
         // Add overlay if available
         if (useOverlay && overlayPath) {
             command = command.input(overlayPath);
-        }
-        
-        // Set up filter complex
-        if (useOverlay && overlayPath) {
-            // With overlay - using the simplest possible overlay filter
+            
+            // Use complex filter to handle both overlay and framerate adjustments in one filter chain
             command.complexFilter([
-                '[0:v][1:v]overlay=format=auto:alpha=0.3[outv]'
+                // Apply framerate variation to main video
+                `[0:v]fps=fps=${fpsVar},setpts=${ptsVar}*PTS[mainv];`,
+                // Overlay the second input
+                `[mainv][1:v]overlay=format=auto:alpha=0.3[outv]`
             ], 'outv')
             .map('outv')
             .map('0:a');
+        } else {
+            // No overlay - we can use simpler video filters
+            command.videoFilters([
+                {
+                    filter: 'fps',
+                    options: `fps=${fpsVar}`
+                },
+                {
+                    filter: 'setpts',
+                    options: `${ptsVar}*PTS`
+                }
+            ]);
         }
-        
-        // Apply the following subtle edits that achieve a similar effect to frame swapping:
-        // 1. Slightly variable frame rate
-        // 2. Subtle audio pitch adjustment
-        // These make the video different enough to avoid detection but without complex processing
-        
-        // Video filter: subtle framerate variation
-        command.videoFilters([
-            {
-                filter: 'fps',
-                options: `fps=${Math.random() < 0.5 ? 29.97 : 30.01}` // Subtle fps variation
-            },
-            {
-                filter: 'setpts',
-                options: `(${1 + (Math.random() * 0.005)})*PTS` // Subtle timing variation
-            }
-        ]);
         
         // Audio filters: pitch adjustment (same as before)
         command.audioFilters([
