@@ -46,10 +46,11 @@ async function downloadFile(url, outputPath) {
         const options = {
             headers: {
                 'Authorization': `Bearer ${process.env.SLACK_BOT_TOKEN}`
-            }
+            },
+            timeout: 30000 // Add a timeout to prevent hanging downloads
         };
 
-        https.get(url, options, response => {
+        const request = https.get(url, options, response => {
             if (response.statusCode !== 200) {
                 reject(new Error(`Failed to download file: ${response.statusCode}`));
                 return;
@@ -59,7 +60,17 @@ async function downloadFile(url, outputPath) {
 
             fileStream.on('finish', () => {
                 fileStream.close();
+                
+                // Verify the file was downloaded correctly
+                const fileStats = fs.statSync(outputPath);
+                if (fileStats.size === 0) {
+                    console.error('Downloaded file is empty');
+                    reject(new Error('Downloaded file is empty'));
+                    return;
+                }
+                
                 console.log('File downloaded successfully to:', outputPath);
+                console.log('File size:', Math.round(fileStats.size / 1024), 'KB');
                 resolve(outputPath);
             });
 
@@ -67,9 +78,17 @@ async function downloadFile(url, outputPath) {
                 fs.unlink(outputPath, () => {}); // Delete the file if there's an error
                 reject(err);
             });
-        }).on('error', (err) => {
+        });
+        
+        request.on('error', (err) => {
             fs.unlink(outputPath, () => {}); // Delete the file if there's an error
             reject(err);
+        });
+        
+        // Add a timeout handler
+        request.on('timeout', () => {
+            request.abort();
+            reject(new Error('Download request timed out'));
         });
     });
 }
@@ -158,7 +177,42 @@ app.event('file_shared', async ({ event, client }) => {
 app.action('process_multiple_videos', async ({ ack, body, client }) => {
     await ack();
     
-    const channelVideos = pendingVideos.get(body.channel.id) || [];
+    // Function to check for videos with retry
+    const checkForVideos = async (attempts = 0) => {
+        let channelVideos = pendingVideos.get(body.channel.id) || [];
+        
+        // Log the current state for debugging
+        console.log(`Checking for videos - attempt ${attempts + 1}. Found: ${channelVideos.length} videos`);
+        
+        if (channelVideos.length === 0 && attempts < 3) {
+            // If no videos found on first try, wait a moment and try again
+            console.log("No videos found, waiting for file system to update...");
+            
+            // Send a temporary message to the user
+            if (attempts === 0) {
+                await client.chat.postMessage({
+                    channel: body.channel.id,
+                    text: "Starting to process 0 videos... This might take a while."
+                });
+            }
+            
+            // Wait 1.5 seconds before retrying (increase with each attempt)
+            await new Promise(resolve => setTimeout(resolve, 1500 * (attempts + 1)));
+            
+            // Refresh the channel videos
+            channelVideos = pendingVideos.get(body.channel.id) || [];
+            
+            // If still no videos, retry
+            if (channelVideos.length === 0) {
+                return checkForVideos(attempts + 1);
+            }
+        }
+        
+        return channelVideos;
+    };
+    
+    // Check for videos with retry mechanism
+    const channelVideos = await checkForVideos();
     
     if (channelVideos.length === 0) {
         await client.chat.postMessage({
