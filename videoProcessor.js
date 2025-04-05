@@ -283,40 +283,54 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                 if (fs.existsSync(emojiImagePath)) {
                     console.log("Emoji file exists, proceeding with overlay");
                     
-                    // SIMPLIFIED APPROACH: Use standard filters but skip the complex filter setup
-                    // This is more reliable in cloud environments
+                    // MASSIVE EMOJI: Make it extremely large and visible
                     
-                    // DO NOT add the emoji image as a separate input - we'll use the drawtext filter instead
-                    // It's simpler and more reliable
-
-                    // Add a drawbox filter for background of emoji
+                    // Add a much larger drawbox filter for background of emoji
                     videoFilters.push({
                         filter: 'drawbox', 
                         options: {
-                            x: 'w-72-20',             // Position box for emoji (width of emoji + margin)
+                            x: 'w-180-20',            // Position box for emoji (much wider)
                             y: '10',                  // 10px from top
-                            w: '72',                  // Width of emoji
-                            h: '72',                  // Height of emoji
-                            color: 'black@0.3',       // Semi-transparent background
+                            w: '180',                 // Much wider box
+                            h: '180',                 // Much taller box
+                            color: 'black@0.5',       // Darker semi-transparent background
                             t: 'fill'                 // Fill the box
                         }
                     });
                     
-                    // Use drawtext instead of overlay - more compatible with cloud environments
+                    // Try ASCII art approach - use a large solid character that's more visible
+                    const emojiSymbol = "●"; // Solid circle as fallback
+                    
+                    // Use a very large text for the emoji
                     videoFilters.push({
                         filter: 'drawtext',
                         options: {
-                            text: textWatermark,      // The emoji character
-                            fontsize: 50,             // Large enough to be visible
-                            x: 'w-60-20',             // Position (adjusted to center in box)
-                            y: '20',                  // Position from top
-                            shadowcolor: 'black@0.5', // Shadow for better visibility
-                            shadowx: 2,
-                            shadowy: 2,
+                            text: textWatermark,       // The emoji character
+                            fontsize: 150,             // MUCH larger to be clearly visible
+                            fontcolor: 'yellow',       // Bright color for visibility
+                            x: 'w-160-30',             // Position (adjusted to center in larger box)
+                            y: '25',                   // Position from top
+                            shadowcolor: 'black@0.8',  // Stronger shadow for better visibility
+                            shadowx: 3,
+                            shadowy: 3,
+                            fontfile: '/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf', // Try explicitly specifying Noto Emoji font
                         }
                     });
                     
-                    console.log("Added emoji text with drawtext filter");
+                    // Add the ASCII fallback in case the emoji font doesn't work
+                    videoFilters.push({
+                        filter: 'drawtext',
+                        options: {
+                            text: emojiSymbol,        // Fallback symbol
+                            fontsize: 100,            // Large size for visibility
+                            fontcolor: 'yellow',      // Bright color
+                            x: 'w-130-30',            // Centered position
+                            y: '45',                  // Positioned to not overlap completely
+                            enable: 'between(t,0,0.001)', // Only show for a brief moment as test
+                        }
+                    });
+                    
+                    console.log("Added LARGE emoji text with drawtext filter");
                 }
             }
             
@@ -510,10 +524,40 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                 reject(enhancedError);
             });
 
-            command.on('end', () => {
+            command.on('end', async () => {
                 console.log('FFmpeg processing finished');
                 clearTimeout(timeoutId); // Clear timeout on success
-                resolve(outputPath);
+                
+                // If emoji requested, apply it as a separate step
+                if (textWatermark) {
+                    // Create a temporary file path for the intermediate result
+                    const tempPath = outputPath;
+                    const finalPath = `${path.dirname(outputPath)}/final_${path.basename(outputPath)}`;
+                    
+                    try {
+                        // Apply the emoji overlay
+                        console.log('Applying emoji overlay as separate step...');
+                        const result = await applyEmojiOverlay(tempPath, finalPath, textWatermark);
+                        
+                        // If successful, clean up the temp file and resolve with the final path
+                        if (result === finalPath && fs.existsSync(finalPath)) {
+                            if (fs.existsSync(tempPath)) {
+                                fs.unlinkSync(tempPath);
+                            }
+                            resolve(finalPath);
+                        } else {
+                            // If emoji overlay failed, use the original processed file
+                            resolve(tempPath);
+                        }
+                    } catch (emojiError) {
+                        console.error('Error applying emoji:', emojiError);
+                        // If emoji fails, still return the processed video
+                        resolve(tempPath);
+                    }
+                } else {
+                    // No emoji requested, just resolve with the processed file
+                    resolve(outputPath);
+                }
             });
 
             // Start the processing
@@ -524,115 +568,29 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
 
 // Micro-subtle rehash function for cloud environments
 async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark = null) {
-    return new Promise((resolve, reject) => {
-        // Generate random ID
-        const randomId = Math.floor(Math.random() * 1000);
-        const basename = path.basename(inputPath);
-        const name = path.basename(basename, path.extname(basename));
-        
-        // If output path is not specified, create one with the random ID
-        if (!outputPath) {
-            const ext = path.extname(basename);
-            outputPath = path.join(path.dirname(inputPath), `${name}_fresh_edit_${randomId}${ext}`);
-        }
-        
-        console.log(`\n🎬 Processing rehash (cloud-optimized): ${basename}`);
-        
-        // Create command early for timeout handling
-        let command = ffmpeg(inputPath);
-        
-        // Timeout for cloud environment - kill process if it takes too long
-        const timeoutId = setTimeout(() => {
-            console.error('Rehash timeout - killing process to prevent hanging');
-            command.kill('SIGKILL');
-            reject(new Error('Rehash timeout - process terminated'));
-        }, 10 * 60 * 1000); // 10-minute timeout
-        
-        // Prepare video filters - absolute minimum for cloud reliability
-        let videoFilters = [];
+    return new Promise(async (resolve, reject) => {
+        try {
+            // Generate random ID
+            const randomId = Math.floor(Math.random() * 1000);
+            const basename = path.basename(inputPath);
+            const name = path.basename(basename, path.extname(basename));
             
-        // Add emoji watermark if provided
-        if (textWatermark) {
-            console.log(`Adding emoji watermark: ${textWatermark}`);
-            
-            // Create emoji image directory if it doesn't exist
-            const emojiDir = path.join(__dirname, 'emoji_images');
-            if (!fs.existsSync(emojiDir)) {
-                fs.mkdirSync(emojiDir, { recursive: true });
+            // Create final output path if not specified
+            if (!outputPath) {
+                const ext = path.extname(basename);
+                outputPath = path.join(path.dirname(inputPath), `${name}_fresh_edit_${randomId}${ext}`);
             }
             
-            // Path to save the emoji image
-            const emojiChar = textWatermark.codePointAt(0);
-            const emojiImagePath = path.join(emojiDir, `emoji_${emojiChar}.png`);
+            // Create temp paths for intermediate files
+            const tempOutputPath = path.join(path.dirname(outputPath), `temp_${randomId}${path.extname(outputPath)}`);
+            const finalOutputPath = outputPath; // Store the final path
             
-            // Check if we already have this emoji downloaded
-            if (!fs.existsSync(emojiImagePath)) {
-                try {
-                    // Try to download the emoji image synchronously before processing
-                    const emojiCodePoint = textWatermark.codePointAt(0).toString(16);
-                    const emojiUrl = `https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/${emojiCodePoint}.png`;
-                    
-                    console.log(`Downloading emoji from ${emojiUrl}`);
-                    execSync(`curl "${emojiUrl}" -o "${emojiImagePath}"`);
-                    console.log(`Downloaded emoji to ${emojiImagePath}`);
-                } catch (error) {
-                    console.error('Error downloading emoji:', error);
-                    // Continue without the emoji if download fails
-                }
-            }
+            console.log(`\n🎬 Processing rehash (cloud-optimized): ${basename}`);
             
-            // Only add overlay if the emoji image exists
-            if (fs.existsSync(emojiImagePath)) {
-                console.log("Emoji file exists, proceeding with overlay");
-                
-                // Add a drawbox filter for background of emoji
-                videoFilters.push({
-                    filter: 'drawbox', 
-                    options: {
-                        x: 'w-72-20',             // Position box for emoji (width of emoji + margin)
-                        y: '10',                  // 10px from top
-                        w: '72',                  // Width of emoji
-                        h: '72',                  // Height of emoji
-                        color: 'black@0.3',       // Semi-transparent background
-                        t: 'fill'                 // Fill the box
-                    }
-                });
-                
-                // Use drawtext instead of overlay - more compatible with cloud environments
-                videoFilters.push({
-                    filter: 'drawtext',
-                    options: {
-                        text: textWatermark,      // The emoji character
-                        fontsize: 50,             // Large enough to be visible
-                        x: 'w-60-20',             // Position (adjusted to center in box)
-                        y: '20',                  // Position from top
-                        shadowcolor: 'black@0.5', // Shadow for better visibility
-                        shadowx: 2,
-                        shadowy: 2,
-                    }
-                });
-                
-                console.log("Added emoji text with drawtext filter");
-            }
-        }
-        
-        // Apply video filters if needed and we haven't used complexFilter
-        if (videoFilters.length > 0) {
-            command.videoFilters(videoFilters);
+            // Step 1: Process the video with simple metadata changes only (no filters)
+            let command = ffmpeg(inputPath);
             
-            // When using filters, we must use encoding instead of stream copy for video
-            command.outputOptions([
-                '-c:v', 'libx264',     // Use encoding since we have filters
-                '-c:a', 'copy',        // Still copy audio stream for speed
-                '-preset', 'ultrafast', // Fastest encoding
-                '-crf', '23',          // Reasonable quality/size tradeoff
-                '-movflags', '+faststart',
-                // Add minimal metadata changes
-                '-metadata', `title=${name}_edit_${randomId}`,
-                '-metadata', `comment=Processed video ${new Date().toISOString()}`
-            ]);
-        } else {
-            // Without filters, we can use stream copy for both audio and video (faster)
+            // Simple copy with metadata changes
             command.outputOptions([
                 '-c:v', 'copy',        // Copy video stream for maximum speed
                 '-c:a', 'copy',        // Copy audio stream for maximum speed
@@ -641,37 +599,241 @@ async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark 
                 '-metadata', `title=${name}_edit_${randomId}`,
                 '-metadata', `comment=Processed video ${new Date().toISOString()}`
             ]);
+            
+            // Process and save the metadata-only version
+            await new Promise((resolveStep1, rejectStep1) => {
+                const timeoutId = setTimeout(() => {
+                    console.error('Rehash timeout - killing process');
+                    command.kill('SIGKILL');
+                    rejectStep1(new Error('Processing timeout - process terminated'));
+                }, 10 * 60 * 1000);
+                
+                command
+                    .on('start', (cmdline) => {
+                        console.log(`🚀 FFmpeg rehash metadata started`);
+                    })
+                    .on('progress', (progress) => {
+                        if (progress.percent) {
+                            console.log(`⏳ Metadata update progress: ${Math.round(progress.percent)}%`);
+                            clearTimeout(timeoutId);
+                        }
+                    })
+                    .on('error', (err) => {
+                        clearTimeout(timeoutId);
+                        console.error('❌ Metadata update error:', err);
+                        rejectStep1(err);
+                    })
+                    .on('end', () => {
+                        clearTimeout(timeoutId);
+                        console.log('✅ Metadata update completed');
+                        resolveStep1();
+                    })
+                    .save(tempOutputPath);
+            });
+            
+            // Step 2: If emoji is requested, apply it to the processed file
+            if (textWatermark) {
+                const emojiOutputPath = await applyEmojiOverlay(tempOutputPath, finalOutputPath, textWatermark);
+                
+                // Clean up the temp file
+                if (fs.existsSync(tempOutputPath)) {
+                    fs.unlinkSync(tempOutputPath);
+                }
+                
+                resolve(emojiOutputPath);
+            } else {
+                // No emoji needed, just rename the temp file
+                fs.renameSync(tempOutputPath, finalOutputPath);
+                resolve(finalOutputPath);
+            }
+        } catch (error) {
+            console.error('Error in rehash process:', error);
+            reject(error);
+        }
+    });
+}
+
+// Add a dedicated function to apply emoji overlay using the Twitter emoji image
+async function applyEmojiOverlay(inputPath, outputPath, textWatermark) {
+    return new Promise((resolve, reject) => {
+        console.log(`Adding emoji overlay: ${textWatermark}`);
+        
+        // Validate input path exists
+        if (!fs.existsSync(inputPath)) {
+            console.error(`Input file doesn't exist: ${inputPath}`);
+            return resolve(inputPath); // Return original path if input doesn't exist
         }
         
-        // Process and save the output
-        command
-            .on('start', (cmdline) => {
-                console.log(`🚀 FFmpeg rehash command started (cloud-optimized)`);
-            })
-            .on('progress', (progress) => {
-                if (progress.percent) {
-                    console.log(`⏳ Rehashing progress: ${Math.round(progress.percent)}%`);
-                    // Reset timeout on progress
-                    clearTimeout(timeoutId);
-                    const newTimeoutId = setTimeout(() => {
-                        console.error('Rehash timeout - killing process');
-                        command.kill('SIGKILL');
-                        reject(new Error('Rehash timeout - process terminated'));
-                    }, 5 * 60 * 1000); // 5-minute timeout from last progress
+        // Create emoji image directory if it doesn't exist
+        const emojiDir = path.join(__dirname, 'emoji_images');
+        if (!fs.existsSync(emojiDir)) {
+            try {
+                fs.mkdirSync(emojiDir, { recursive: true });
+                console.log(`Created emoji directory: ${emojiDir}`);
+            } catch (dirError) {
+                console.error(`Failed to create emoji directory: ${dirError.message}`);
+                return resolve(inputPath); // Continue without emoji if directory creation fails
+            }
+        }
+        
+        // Path to save the emoji image
+        const emojiChar = textWatermark.codePointAt(0);
+        const emojiImagePath = path.join(emojiDir, `emoji_${emojiChar}.png`);
+        
+        // Try multiple emoji sources to ensure we get a usable image
+        const downloadEmoji = () => {
+            try {
+                // Primary source: Twitter's Twemoji library
+                const emojiCodePoint = textWatermark.codePointAt(0).toString(16).toLowerCase();
+                const emojiUrl = `https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/${emojiCodePoint}.png`;
+                
+                console.log(`Downloading emoji from ${emojiUrl}`);
+                execSync(`curl "${emojiUrl}" -o "${emojiImagePath}"`, { timeout: 10000 });
+                
+                // Verify the download was successful by checking file size (> 100 bytes)
+                if (fs.existsSync(emojiImagePath) && fs.statSync(emojiImagePath).size > 100) {
+                    console.log(`Successfully downloaded emoji to ${emojiImagePath}`);
+                    return true;
+                } else {
+                    // Fallback to alternative source: Openmoji
+                    console.log("Twitter emoji download failed or too small, trying OpenMoji...");
+                    const openmojiUrl = `https://openmoji.org/data/color/svg/${emojiCodePoint}.svg`;
+                    execSync(`curl "${openmojiUrl}" -o "${emojiImagePath}.svg"`, { timeout: 10000 });
+                    
+                    // Convert SVG to PNG using ffmpeg
+                    if (fs.existsSync(`${emojiImagePath}.svg`)) {
+                        execSync(`ffmpeg -y -i "${emojiImagePath}.svg" -vf scale=216:216 "${emojiImagePath}"`, { timeout: 10000 });
+                        fs.unlinkSync(`${emojiImagePath}.svg`); // Clean up SVG file
+                        return fs.existsSync(emojiImagePath);
+                    }
                 }
-            })
-            .on('error', (err, stdout, stderr) => {
-                clearTimeout(timeoutId);
-                console.error('❌ FFmpeg rehash error:', err);
-                if (stderr) console.error(stderr);
-                reject(err);
-            })
-            .on('end', () => {
-                clearTimeout(timeoutId);
-                console.log('✅ Video rehash completed successfully');
-                resolve(outputPath);
-            })
-            .save(outputPath);
+                return false;
+            } catch (error) {
+                console.error(`Error downloading emoji: ${error.message}`);
+                return false;
+            }
+        };
+        
+        // Check if we already have this emoji downloaded or download it
+        let emojiExists = fs.existsSync(emojiImagePath) && fs.statSync(emojiImagePath).size > 100;
+        if (!emojiExists) {
+            emojiExists = downloadEmoji();
+        }
+        
+        // Only add overlay if the emoji image exists
+        if (emojiExists) {
+            console.log("Emoji file exists and is valid, applying as overlay");
+            
+            // Create the ffmpeg command
+            const command = ffmpeg(inputPath);
+            
+            // Add the emoji image as input
+            command.input(emojiImagePath);
+            
+            // Setup timeout for cloud environment
+            const timeoutId = setTimeout(() => {
+                console.error('Emoji overlay timeout - killing process');
+                command.kill('SIGKILL');
+                // Instead of rejecting, resolve with original path
+                resolve(inputPath);
+            }, 5 * 60 * 1000);
+            
+            // Create a more reliable filter complex syntax
+            // Use position variables to allow flexible positioning
+            command
+                .outputOptions([
+                    // Use simpler syntax that's most widely compatible across FFmpeg versions
+                    '-filter_complex', '[1:v]scale=216:216[emoji];[0:v][emoji]overlay=main_w-216-20:20',
+                    '-c:a', 'copy',  // Copy audio stream
+                    '-preset', 'ultrafast',  // Use fastest encoding
+                    '-movflags', '+faststart'  // Optimize for web playback
+                ])
+                .on('start', (cmdline) => {
+                    console.log('Emoji overlay command:', cmdline);
+                })
+                .on('progress', (progress) => {
+                    if (progress.percent) {
+                        console.log(`Emoji overlay progress: ${Math.round(progress.percent)}%`);
+                        // Reset timeout on progress
+                        clearTimeout(timeoutId);
+                        const newTimeoutId = setTimeout(() => {
+                            console.error('Emoji overlay timeout on progress - killing process');
+                            command.kill('SIGKILL');
+                            resolve(inputPath); // Return original if timeout
+                        }, 5 * 60 * 1000);
+                    }
+                })
+                .on('error', (err, stdout, stderr) => {
+                    clearTimeout(timeoutId);
+                    console.error('Error applying emoji overlay:', err.message);
+                    if (stderr) console.error('FFmpeg stderr:', stderr);
+                    
+                    // Try an alternative approach with absolute coordinates
+                    console.log('Trying alternative overlay method...');
+                    retryWithSimpleOverlay(inputPath, outputPath, emojiImagePath)
+                        .then(resultPath => resolve(resultPath))
+                        .catch(() => resolve(inputPath)); // Fall back to original if retry fails
+                })
+                .on('end', () => {
+                    clearTimeout(timeoutId);
+                    console.log('Emoji overlay applied successfully');
+                    resolve(outputPath);
+                })
+                .save(outputPath);
+        } else {
+            console.log("No emoji image available, skipping overlay");
+            resolve(inputPath);
+        }
+    });
+}
+
+// Simpler fallback function with minimal options
+async function retryWithSimpleOverlay(inputPath, outputPath, emojiImagePath) {
+    return new Promise((resolve, reject) => {
+        console.log("Attempting simpler overlay method...");
+        
+        // Get video dimensions
+        ffmpeg.ffprobe(inputPath, (err, metadata) => {
+            if (err) {
+                console.error('Failed to get video dimensions:', err.message);
+                return reject(err);
+            }
+            
+            // Find video stream
+            const videoStream = metadata.streams.find(s => s.codec_type === 'video');
+            if (!videoStream) {
+                console.error('No video stream found for dimensions');
+                return reject(new Error('No video stream found'));
+            }
+            
+            const width = videoStream.width;
+            const height = videoStream.height;
+            
+            // Calculate position (right corner, 20px from edge)
+            const posX = width - 216 - 20;
+            const posY = 20;
+            
+            // Create command with absolute coordinates
+            const command = ffmpeg(inputPath)
+                .input(emojiImagePath)
+                .outputOptions([
+                    // Use absolute coordinates instead of expressions
+                    '-filter_complex', `[1:v]scale=216:216[emoji];[0:v][emoji]overlay=${posX}:${posY}`,
+                    '-c:a', 'copy',
+                    '-preset', 'ultrafast'
+                ])
+                .on('error', (err) => {
+                    console.error('Alternative overlay failed:', err.message);
+                    reject(err);
+                })
+                .on('end', () => {
+                    console.log('Alternative overlay method successful');
+                    resolve(outputPath);
+                });
+                
+            // Save the output
+            command.save(outputPath);
+        });
     });
 }
 
