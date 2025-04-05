@@ -651,6 +651,14 @@ async function applyTextOverlay(inputPath, outputPath, text) {
             resolve(inputPath);
         }, 5 * 60 * 1000);
         
+        // Use a system font path that supports emoji
+        const fontPath = process.platform === 'win32' 
+            ? 'C\\:\\Windows\\Fonts\\seguiemj.ttf' // Windows Segoe UI Emoji font
+            : '/System/Library/Fonts/Apple Color Emoji.ttc'; // Mac
+        
+        // Linux fallback
+        const linuxFontPath = '/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf';
+        
         // Use a much simpler filter syntax with direct string values
         // This avoids the complex expression parsing that might be causing issues
         command
@@ -661,6 +669,7 @@ async function applyTextOverlay(inputPath, outputPath, text) {
                         text: text,
                         fontsize: 64,
                         fontcolor: 'white',
+                        fontfile: process.platform === 'linux' ? linuxFontPath : fontPath,
                         box: 1,
                         boxcolor: 'black@0.5',
                         boxborderw: 10,
