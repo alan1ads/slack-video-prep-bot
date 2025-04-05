@@ -256,14 +256,13 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                     filter: 'drawtext',
                     options: {
                         text: textWatermark,
-                        fontsize: Math.min(height / 10, 72), // LARGER size - 72px max instead of 36px
-                        fontcolor: 'white@0.0', // Transparent white to preserve emoji colors
-                        shadowcolor: 'black@0.5', // Add shadow for better visibility
+                        fontfile: 'C\\:/Windows/Fonts/seguiemj.ttf', // Windows Segoe UI Emoji font with color support
+                        fontsize: Math.min(height / 6, 120), // MUCH LARGER size for better emoji visibility
+                        fontcolor: 'white@0.0', // Transparent to preserve emoji colors
+                        shadowcolor: 'black@0.4', // Lighter shadow for better color visibility
                         shadowx: 2,
                         shadowy: 2,
-                        box: 1,
-                        boxcolor: 'black@0.2', // Slight background box for better visibility
-                        boxborderw: 5,
+                        box: 0, // Remove box for better emoji appearance
                         fix_bounds: true, // Ensure it stays within frame
                         // Position in the UPPER right corner
                         x: 'w-tw-10', // 10px from right edge
@@ -512,14 +511,13 @@ async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark 
                 filter: 'drawtext',
                 options: {
                     text: textWatermark,
-                    fontsize: 72, // LARGER fixed size (72px instead of 36px)
-                    fontcolor: 'white@0.0', // Transparent white to preserve emoji colors
-                    shadowcolor: 'black@0.5', // Add shadow for better visibility
+                    fontfile: 'C\\:/Windows/Fonts/seguiemj.ttf', // Windows Segoe UI Emoji font with color support
+                    fontsize: 120, // MUCH LARGER fixed size for better emoji visibility
+                    fontcolor: 'white@0.0', // Transparent to preserve emoji colors
+                    shadowcolor: 'black@0.4', // Lighter shadow for better color visibility
                     shadowx: 2,
                     shadowy: 2,
-                    box: 1,
-                    boxcolor: 'black@0.2', // Slight background box for better visibility
-                    boxborderw: 5,
+                    box: 0, // Remove box for better emoji appearance
                     fix_bounds: true, // Ensure it stays within frame
                     // Position in the UPPER right corner
                     x: 'w-tw-10', // 10px from right edge
