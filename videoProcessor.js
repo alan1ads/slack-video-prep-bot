@@ -249,89 +249,9 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                 });
             }
             
-            // Add text/emoji watermark if provided
+            // Note about emoji watermark
             if (textWatermark) {
-                console.log(`Adding emoji watermark: ${textWatermark}`);
-                
-                // Create emoji image directory if it doesn't exist
-                const emojiDir = path.join(__dirname, 'emoji_images');
-                if (!fs.existsSync(emojiDir)) {
-                    fs.mkdirSync(emojiDir, { recursive: true });
-                }
-                
-                // Path to save the emoji image
-                const emojiChar = textWatermark.codePointAt(0);
-                const emojiImagePath = path.join(emojiDir, `emoji_${emojiChar}.png`);
-                
-                // Check if we already have this emoji downloaded
-                if (!fs.existsSync(emojiImagePath)) {
-                    try {
-                        // Try to download the emoji image synchronously before processing
-                        const emojiCodePoint = textWatermark.codePointAt(0).toString(16);
-                        const emojiUrl = `https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/${emojiCodePoint}.png`;
-                        
-                        console.log(`Downloading emoji from ${emojiUrl}`);
-                        execSync(`curl "${emojiUrl}" -o "${emojiImagePath}"`);
-                        console.log(`Downloaded emoji to ${emojiImagePath}`);
-                    } catch (error) {
-                        console.error('Error downloading emoji:', error);
-                        // Continue without the emoji if download fails
-                    }
-                }
-                
-                // Only add overlay if the emoji image exists
-                if (fs.existsSync(emojiImagePath)) {
-                    console.log("Emoji file exists, proceeding with overlay");
-                    
-                    // MASSIVE EMOJI: Make it extremely large and visible
-                    
-                    // Add a much larger drawbox filter for background of emoji
-                    videoFilters.push({
-                        filter: 'drawbox', 
-                        options: {
-                            x: 'w-180-20',            // Position box for emoji (much wider)
-                            y: '10',                  // 10px from top
-                            w: '180',                 // Much wider box
-                            h: '180',                 // Much taller box
-                            color: 'black@0.5',       // Darker semi-transparent background
-                            t: 'fill'                 // Fill the box
-                        }
-                    });
-                    
-                    // Try ASCII art approach - use a large solid character that's more visible
-                    const emojiSymbol = "●"; // Solid circle as fallback
-                    
-                    // Use a very large text for the emoji
-                    videoFilters.push({
-                        filter: 'drawtext',
-                        options: {
-                            text: textWatermark,       // The emoji character
-                            fontsize: 150,             // MUCH larger to be clearly visible
-                            fontcolor: 'yellow',       // Bright color for visibility
-                            x: 'w-160-30',             // Position (adjusted to center in larger box)
-                            y: '25',                   // Position from top
-                            shadowcolor: 'black@0.8',  // Stronger shadow for better visibility
-                            shadowx: 3,
-                            shadowy: 3,
-                            fontfile: '/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf', // Try explicitly specifying Noto Emoji font
-                        }
-                    });
-                    
-                    // Add the ASCII fallback in case the emoji font doesn't work
-                    videoFilters.push({
-                        filter: 'drawtext',
-                        options: {
-                            text: emojiSymbol,        // Fallback symbol
-                            fontsize: 100,            // Large size for visibility
-                            fontcolor: 'yellow',      // Bright color
-                            x: 'w-130-30',            // Centered position
-                            y: '45',                  // Positioned to not overlap completely
-                            enable: 'between(t,0,0.001)', // Only show for a brief moment as test
-                        }
-                    });
-                    
-                    console.log("Added LARGE emoji text with drawtext filter");
-                }
+                console.log(`Emoji watermark will be added as a separate step after main processing`);
             }
             
             // Apply video filters (only if we didn't use complex filter)
