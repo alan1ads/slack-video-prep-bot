@@ -249,7 +249,7 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                 });
             }
             
-            // Add text watermark if provided
+            // Add text/emoji watermark if provided
             if (textWatermark) {
                 console.log(`Adding emoji watermark: ${textWatermark}`);
                 
@@ -282,24 +282,36 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
                 
                 // Only add overlay if the emoji image exists
                 if (fs.existsSync(emojiImagePath)) {
-                    // Calculate size based on video dimensions - larger for visibility
-                    const overlaySize = Math.max(80, Math.min(width / 8, height / 8));
+                    // IMPORTANT: For overlays we need to use a complex filter graph instead
+                    // Remove the overlay from videoFilters and handle it separately
                     
-                    // Add video filter to overlay the emoji
-                    videoFilters.push({
-                        filter: 'overlay',
-                        options: {
-                            x: `main_w-overlay_w-10`,   // 10px from right edge
-                            y: '10',                    // 10px from top edge
-                            eof_action: 'repeat',       // Keep showing the overlay
-                            enable: '1'                 // Always enabled
-                        },
-                        inputs: [emojiImagePath]        // Input the emoji image
-                    });
+                    // First apply the basic video filters
+                    command.videoFilters(videoFilters);
+                    
+                    // Then add the emoji as an input and use complexFilter
+                    command.input(emojiImagePath);
+                    
+                    // Create a complex filter string instead of using the filter objects
+                    // This ensures proper handling of multiple inputs
+                    command.complexFilter([
+                        {
+                            filter: 'overlay',
+                            options: {
+                                x: 'main_w-overlay_w-10',   // 10px from right edge
+                                y: '10',                    // 10px from top edge
+                                eof_action: 'repeat',       // Keep showing the overlay
+                                enable: '1'                 // Always enabled
+                            },
+                            inputs: ['0:v', '1:v'],         // Use input labels (main video [0] and emoji [1])
+                            outputs: ['v']                  // Name the output stream 'v'
+                        }
+                    ], ['v']);                             // Map the 'v' output to the video output
+                    
+                    return; // Skip applying regular videoFilters since we're using complexFilter
                 }
             }
             
-            // Apply video filters
+            // Apply video filters (only if we didn't use complex filter)
             command.videoFilters(videoFilters);
 
             // Create a clean array of audio filters with proper ordering
@@ -530,7 +542,7 @@ async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark 
         // Prepare video filters - absolute minimum for cloud reliability
         let videoFilters = [];
             
-        // Add text watermark if provided
+        // Add emoji watermark if provided
         if (textWatermark) {
             console.log(`Adding emoji watermark: ${textWatermark}`);
             
@@ -563,22 +575,43 @@ async function applyRehash(inputPath, outputPath, overlaysFolder, textWatermark 
             
             // Only add overlay if the emoji image exists
             if (fs.existsSync(emojiImagePath)) {
-                // Use the overlay filter with the emoji image
-                command = command.input(emojiImagePath);
+                // Add the emoji image as an input
+                command.input(emojiImagePath);
                 
-                videoFilters.push({
-                    filter: 'overlay',
-                    options: {
-                        x: 'main_w-overlay_w-10',   // 10px from right edge
-                        y: '10',                    // 10px from top edge
-                        eof_action: 'repeat',       // Keep showing the overlay
-                        enable: '1'                 // Always enabled
+                // Create a complex filter for the overlay
+                command.complexFilter([
+                    {
+                        filter: 'overlay',
+                        options: {
+                            x: 'main_w-overlay_w-10',   // 10px from right edge
+                            y: '10',                    // 10px from top edge
+                            eof_action: 'repeat',       // Keep showing the overlay
+                            enable: '1'                 // Always enabled
+                        },
+                        inputs: ['0:v', '1:v'],         // Use input labels (main video [0] and emoji [1])
+                        outputs: ['v']                  // Name the output stream 'v'
                     }
-                });
+                ], ['v']);                             // Map the 'v' output to the video output
+                
+                // When using filters, we must use encoding instead of stream copy for video
+                command.outputOptions([
+                    '-c:v', 'libx264',     // Use encoding since we have filters
+                    '-c:a', 'copy',        // Still copy audio stream for speed
+                    '-preset', 'ultrafast', // Fastest encoding
+                    '-crf', '23',          // Reasonable quality/size tradeoff
+                    '-movflags', '+faststart',
+                    // Add minimal metadata changes
+                    '-metadata', `title=${name}_edit_${randomId}`,
+                    '-metadata', `comment=Processed video ${new Date().toISOString()}`
+                ]);
+                
+                // We've handled the video filters with complexFilter, so clear the array
+                videoFilters = [];
+                return;
             }
         }
         
-        // Apply video filters if needed
+        // Apply video filters if needed and we haven't used complexFilter
         if (videoFilters.length > 0) {
             command.videoFilters(videoFilters);
             
