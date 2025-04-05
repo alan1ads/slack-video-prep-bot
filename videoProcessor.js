@@ -434,7 +434,7 @@ async function processVideo(inputPath, outputPath, speedAdjustment, saturation, 
     });
 }
 
-// Fix the rehash function to properly handle the filters
+// Super simplified rehash function that will work reliably in cloud environments
 async function applyRehash(inputPath, outputPath, overlaysFolder) {
     return new Promise((resolve, reject) => {
         // Generate random ID
@@ -450,30 +450,10 @@ async function applyRehash(inputPath, outputPath, overlaysFolder) {
         
         console.log(`\n🎬 Processing rehash (lite): ${basename}`);
         
-        // Determine if we'll use an overlay
-        let useOverlay = false;
-        let overlayPath = null;
+        // SIMPLEST POSSIBLE APPROACH FOR CLOUD ENVIRONMENT:
+        // We'll avoid overlays completely and just focus on frame rate and audio pitch changes
+        // which are the core elements needed for the rehash functionality
         
-        // Check if overlay folder exists and contains files
-        if (overlaysFolder && fs.existsSync(overlaysFolder)) {
-            try {
-                const overlayFiles = fs.readdirSync(overlaysFolder)
-                    .filter(f => f.toLowerCase().endsWith('.mp4') || f.toLowerCase().endsWith('.webm'));
-                    
-                if (overlayFiles.length > 0) {
-                    const chosenOverlay = overlayFiles[Math.floor(Math.random() * overlayFiles.length)];
-                    overlayPath = path.join(overlaysFolder, chosenOverlay);
-                    
-                    if (fs.existsSync(overlayPath)) {
-                        useOverlay = true;
-                        console.log(`📼 Overlay selected: ${chosenOverlay}`);
-                    }
-                }
-            } catch (err) {
-                console.log('⚠️ Could not access overlays folder, continuing without overlay');
-            }
-        }
-
         // Prepare audio pitch adjustment (same as before: 1.005 to 1.015)
         const pitchFactor = (1 + (Math.random() * 0.01) + 0.005).toFixed(5);
         
@@ -481,36 +461,22 @@ async function applyRehash(inputPath, outputPath, overlaysFolder) {
         const fpsVar = Math.random() < 0.5 ? 29.97 : 30.01;
         const ptsVar = 1 + (Math.random() * 0.005);
         
-        // Create command
+        // Create command with the simplest possible approach
         let command = ffmpeg(inputPath);
+            
+        // Apply the simplest video filters
+        command.videoFilters([
+            {
+                filter: 'fps',
+                options: `fps=${fpsVar}`
+            },
+            {
+                filter: 'setpts',
+                options: `${ptsVar}*PTS`
+            }
+        ]);
         
-        // MODIFIED APPROACH: Simplified processing strategy depending on overlay
-        if (useOverlay && overlayPath) {
-            // With overlay - use a simple approach with filter_complex as a string option
-            // This avoids the fluent-ffmpeg complexFilter syntax issues
-            command = ffmpeg(inputPath)
-                .input(overlayPath)
-                .outputOptions([
-                    // Apply framerate variation and overlay in a direct filter_complex option
-                    `-filter_complex "[0:v]fps=fps=${fpsVar},setpts=${ptsVar}*PTS[v1];[v1][1:v]overlay=format=auto:alpha=0.3[outv]"`,
-                    '-map "[outv]"',
-                    '-map 0:a'
-                ]);
-        } else {
-            // No overlay - we can use simpler video filters
-            command.videoFilters([
-                {
-                    filter: 'fps',
-                    options: `fps=${fpsVar}`
-                },
-                {
-                    filter: 'setpts',
-                    options: `${ptsVar}*PTS`
-                }
-            ]);
-        }
-        
-        // Audio filters: pitch adjustment (same as before)
+        // Audio filters: pitch adjustment
         command.audioFilters([
             {
                 filter: 'asetrate',
@@ -536,7 +502,7 @@ async function applyRehash(inputPath, outputPath, overlaysFolder) {
         const randomMetadata = generateRandomMetadata();
         command
             .addOutputOption('-metadata', `title=${name}_fresh_edit_${randomId}`)
-            .addOutputOption('-metadata', `comment=Processed with stealth rehash script`)
+            .addOutputOption('-metadata', `comment=Processed with stealth script`)
             .addOutputOption('-metadata', `date=${randomMetadata.date}`)
             .addOutputOption('-metadata', `software=${randomMetadata.software}`);
         
@@ -544,6 +510,7 @@ async function applyRehash(inputPath, outputPath, overlaysFolder) {
         command
             .on('start', (cmdline) => {
                 console.log(`🚀 FFmpeg rehash command started`);
+                //console.log(cmdline); // Uncomment to debug
             })
             .on('progress', (progress) => {
                 if (progress.percent) {
