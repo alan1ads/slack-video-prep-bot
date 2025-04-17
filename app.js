@@ -310,7 +310,7 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
     
     // Log that we found videos and proceed
     console.log(`Found ${channelVideos.length} videos to process in channel ${channelId}`);
-    
+
     try {
         await client.views.open({
             trigger_id: body.trigger_id,
@@ -337,320 +337,14 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
                             text: `*Processing ${channelVideos.length} videos*`
                         }
                     },
-                    // Add this new checkbox block at the top
-                    {
-                        type: 'input',
-                        block_id: 'random_mode',
-                        optional: true,
-                        element: {
-                            type: 'checkboxes',
-                            action_id: 'random_mode_checkbox',
-                            options: [
-                                {
-                                    text: {
-                                        type: 'plain_text',
-                                        text: 'Use Random Mode (all parameters will be randomly generated)',
-                                        emoji: true
-                                    },
-                                    value: 'random'
-                                }
-                            ]
-                        },
-                        label: {
-                            type: 'plain_text',
-                            text: 'Processing Mode',
-                            emoji: true
-                        }
-                    },
-                    {
-                        type: 'input',
-                        block_id: 'speed_adjustment',
-                        element: {
-                            type: 'plain_text_input',
-                            action_id: 'speed_input',
-                            placeholder: {
-                                type: 'plain_text',
-                                text: 'Enter a number (e.g., 2 for 2% faster, -5 for 5% slower)'
-                            }
-                        },
-                        label: {
-                            type: 'plain_text',
-                            text: 'Speed Adjustment (%)'
-                        },
-                        optional: true  // Make this optional so random mode can work
-                    },
-                    {
-                        type: 'input',
-                        block_id: 'saturation_adjustment',
-                        element: {
-                            type: 'plain_text_input',
-                            action_id: 'saturation_input',
-                            placeholder: {
-                                type: 'plain_text',
-                                text: 'Enter a number (e.g., 1.2 for 20% more saturated)'
-                            }
-                        },
-                        label: {
-                            type: 'plain_text',
-                            text: 'Saturation Adjustment'
-                        },
-                        optional: true
-                    },
-                    {
-                        type: 'input',
-                        block_id: 'brightness_adjustment',
-                        element: {
-                            type: 'plain_text_input',
-                            action_id: 'brightness_input',
-                            placeholder: {
-                                type: 'plain_text',
-                                text: 'Enter a number (e.g., 0.1 for 10% brighter, -0.1 for 10% darker)'
-                            }
-                        },
-                        label: {
-                            type: 'plain_text',
-                            text: 'Brightness Adjustment'
-                        },
-                        optional: true
-                    },
-                    {
-                        type: 'input',
-                        block_id: 'contrast_adjustment',
-                        element: {
-                            type: 'plain_text_input',
-                            action_id: 'contrast_input',
-                            placeholder: {
-                                type: 'plain_text',
-                                text: 'Enter a number (e.g., 1.2 for 20% more contrast)'
-                            }
-                        },
-                        label: {
-                            type: 'plain_text',
-                            text: 'Contrast Adjustment'
-                        },
-                        optional: true
-                    },
-                    // Add this field to your modal blocks
-                    {
-                        type: 'input',
-                        block_id: 'fps_adjustment',
-                        element: {
-                            type: 'plain_text_input',
-                            action_id: 'fps_input',
-                            placeholder: {
-                                type: 'plain_text',
-                                text: 'Enter a number (e.g., 2 for 2% higher FPS, -5 for 5% lower FPS)'
-                            }
-                        },
-                        label: {
-                            type: 'plain_text',
-                            text: 'FPS Adjustment (%)'
-                        },
-                        optional: true
-                    },
-                    // Add a divider for better section organization
-                    {
-                        type: 'divider'
-                    },
                     {
                         type: 'section',
                         text: {
                             type: 'mrkdwn',
-                            text: '*Audio Editing Options*'
+                            text: "*Automatic Subtle Changes*\nEach video will be processed with small, random variations to make it unique but still look natural."
                         }
                     },
-                    // Reverb
-                    {
-                        type: 'input',
-                        block_id: 'reverb_level',
-                        element: {
-                            type: 'plain_text_input',
-                            action_id: 'reverb_input',
-                            placeholder: {
-                                type: 'plain_text',
-                                text: 'Enter a number from 0-100 (e.g., 30 for medium reverb)'
-                            }
-                        },
-                        label: {
-                            type: 'plain_text',
-                            text: 'Reverb Level'
-                        },
-                        optional: true
-                    },
-                    // Delay/Echo
-                    {
-                        type: 'input',
-                        block_id: 'delay_level',
-                        element: {
-                            type: 'plain_text_input',
-                            action_id: 'delay_input',
-                            placeholder: {
-                                type: 'plain_text',
-                                text: 'Enter a number from 0-90 (e.g., 20 for subtle delay)'
-                            }
-                        },
-                        label: {
-                            type: 'plain_text',
-                            text: 'Echo/Delay Level'
-                        },
-                        optional: true
-                    },
-                    // Pitch Shift
-                    {
-                        type: 'input',
-                        block_id: 'pitch_shift',
-                        element: {
-                            type: 'plain_text_input',
-                            action_id: 'pitch_input',
-                            placeholder: {
-                                type: 'plain_text',
-                                text: 'Enter from -12 to 12 (e.g., 3 for higher pitch, -4 for lower)'
-                            }
-                        },
-                        label: {
-                            type: 'plain_text',
-                            text: 'Pitch Shift (semitones)'
-                        },
-                        optional: true
-                    },
-                    // Distortion/Saturation
-                    {
-                        type: 'input',
-                        block_id: 'distortion',
-                        element: {
-                            type: 'plain_text_input',
-                            action_id: 'distortion_input',
-                            placeholder: {
-                                type: 'plain_text',
-                                text: 'Enter from 0-100 (e.g., 10 for subtle distortion)'
-                            }
-                        },
-                        label: {
-                            type: 'plain_text',
-                            text: 'Distortion/Saturation'
-                        },
-                        optional: true
-                    },
-                    // Noise Reduction
-                    {
-                        type: 'input',
-                        block_id: 'noise_reduction',
-                        element: {
-                            type: 'plain_text_input',
-                            action_id: 'noise_reduction_input',
-                            placeholder: {
-                                type: 'plain_text',
-                                text: 'Enter from 0-30 (e.g., 10 for moderate noise reduction)'
-                            }
-                        },
-                        label: {
-                            type: 'plain_text',
-                            text: 'Noise Reduction'
-                        },
-                        optional: true
-                    },
-                    // EQ - Low
-                    {
-                        type: 'input',
-                        block_id: 'eq_low_level',
-                        element: {
-                            type: 'plain_text_input',
-                            action_id: 'eq_low_input',
-                            placeholder: {
-                                type: 'plain_text',
-                                text: 'Enter from -15 to 15 (e.g., 3 for more bass, -3 for less)'
-                            }
-                        },
-                        label: {
-                            type: 'plain_text',
-                            text: 'EQ: Low Frequencies (Bass)'
-                        },
-                        optional: true
-                    },
-                    // EQ - Mid
-                    {
-                        type: 'input',
-                        block_id: 'eq_mid_level',
-                        element: {
-                            type: 'plain_text_input',
-                            action_id: 'eq_mid_input',
-                            placeholder: {
-                                type: 'plain_text',
-                                text: 'Enter from -15 to 15 (e.g., 2 for more mids, -2 for less)'
-                            }
-                        },
-                        label: {
-                            type: 'plain_text',
-                            text: 'EQ: Mid Frequencies'
-                        },
-                        optional: true
-                    },
-                    // EQ - High
-                    {
-                        type: 'input',
-                        block_id: 'eq_high_level',
-                        element: {
-                            type: 'plain_text_input',
-                            action_id: 'eq_high_input',
-                            placeholder: {
-                                type: 'plain_text',
-                                text: 'Enter from -15 to 15 (e.g., 3 for more treble, -3 for less)'
-                            }
-                        },
-                        label: {
-                            type: 'plain_text',
-                            text: 'EQ: High Frequencies (Treble)'
-                        },
-                        optional: true
-                    },
-                    // Compression
-                    {
-                        type: 'input',
-                        block_id: 'compression',
-                        element: {
-                            type: 'plain_text_input',
-                            action_id: 'compression_input',
-                            placeholder: {
-                                type: 'plain_text',
-                                text: 'Enter from 0-30 (e.g., 10 for moderate compression)'
-                            }
-                        },
-                        label: {
-                            type: 'plain_text',
-                            text: 'Compression/Limiting'
-                        },
-                        optional: true
-                    },
-                    // De-essing
-                    {
-                        type: 'input',
-                        block_id: 'de_essing',
-                        element: {
-                            type: 'plain_text_input',
-                            action_id: 'de_essing_input',
-                            placeholder: {
-                                type: 'plain_text',
-                                text: 'Enter from 0-10 (e.g., 5 for moderate de-essing)'
-                            }
-                        },
-                        label: {
-                            type: 'plain_text',
-                            text: 'De-essing (reduce harsh S sounds)'
-                        },
-                        optional: true
-                    },
-                    // Add a divider for text watermark section
-                    {
-                        type: 'divider'
-                    },
-                    {
-                        type: 'section',
-                        text: {
-                            type: 'mrkdwn',
-                            text: '*Visual Options*'
-                        }
-                    },
-                    // Text Watermark
+                    // Text Watermark - the only option we keep
                     {
                         type: 'input',
                         block_id: 'text_watermark',
@@ -664,7 +358,7 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
                         },
                         label: {
                             type: 'plain_text',
-                            text: 'Text/Emoji Watermark'
+                            text: 'Text/Emoji Watermark (Optional)'
                         },
                         optional: true
                     },
@@ -674,7 +368,7 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
                         elements: [
                             {
                                 type: 'mrkdwn',
-                                text: '*Note:* Voice Enhancement and Audio Watermarking will be applied randomly. Audio metadata will be generated automatically.'
+                                text: "*What happens behind the scenes:* We'll apply subtle randomized changes to speed, color, audio effects, and metadata. These changes will be almost imperceptible but make each video unique."
                             }
                         ]
                     }
@@ -691,7 +385,7 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
 // Handle modal submission
 app.view('video_processing_modal', async ({ ack, body, view, client }) => {
     await ack();
-    
+
     // Extract channel ID
     const channelId = body.view.private_metadata || body.channel.id;
     
@@ -705,30 +399,32 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
         console.log(`Channel ${mapChannelId}: ${videos.length} videos ${mapChannelId === channelId ? '(MATCH)' : ''}`);
     });
     
-    // Check if random mode is enabled
-    const useRandomMode = view.state.values.random_mode?.random_mode_checkbox?.selected_options?.length > 0;
+    // ALWAYS use randomized values for all parameters except text watermark
+    // Generate extremely subtle random video adjustments
+    let speedAdjustment = Math.floor(Math.random() * 5) - 2; // Range from -2% to 2%
+    let saturation = 0.95 + (Math.random() * 0.1); // Range from 0.95 to 1.05
+    let brightness = (Math.random() * 0.1) - 0.05; // Range from -0.05 to 0.05
+    let contrast = 0.95 + (Math.random() * 0.1); // Range from 0.95 to 1.05
+    let fpsAdjustment = (Math.random() * 2) - 1; // Range from -1% to 1%
     
-    // Extract user inputs
-    let speedAdjustment = 0;
-    let saturation = 1;
-    let brightness = 0;
-    let contrast = 1;
-    let fpsAdjustment = null;
+    // Generate extremely subtle random audio adjustments
+    let reverbLevel = Math.floor(Math.random() * 15); // Very subtle reverb
+    let delayLevel = Math.floor(Math.random() * 10); // Very subtle delay
+    let pitchShift = (Math.random() * 1) - 0.5; // Range from -0.5 to 0.5 semitones
+    let distortion = Math.floor(Math.random() * 5); // Minimal distortion
+    let noiseReduction = Math.floor(Math.random() * 5); // Minimal noise reduction
+    let eqLowLevel = (Math.random() * 2) - 1; // Range from -1 to 1
+    let eqMidLevel = (Math.random() * 2) - 1; // Range from -1 to 1
+    let eqHighLevel = (Math.random() * 2) - 1; // Range from -1 to 1
+    let compression = Math.floor(Math.random() * 5); // Minimal compression
+    let deEssing = Math.floor(Math.random() * 2); // Minimal de-essing
     
-    // NEW: Extract audio parameters with defaults
-    let reverbLevel = null;
-    let delayLevel = null;
-    let pitchShift = null;
-    let distortion = null;
-    let noiseReduction = null;
-    let eqLowLevel = null;
-    let eqMidLevel = null;
-    let eqHighLevel = null;
-    let compression = null;
-    let deEssing = null;
-    
-    // NEW: Extract text watermark
+    // Only extract text watermark (the one option we kept)
     let textWatermark = null;
+    const textWatermarkInput = view.state.values.text_watermark?.text_watermark_input?.value;
+    if (textWatermarkInput && textWatermarkInput.trim() !== '') {
+        textWatermark = textWatermarkInput.trim();
+    }
     
     // Always apply rehash as a standard part of processing
     const shouldRehash = true;
@@ -738,117 +434,11 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
         console.log('Video rehashing is enabled');
     }
     
-    // If random mode is enabled, use random values
-    if (useRandomMode) {
-        // Random video adjustments (existing code)
-        speedAdjustment = Math.floor(Math.random() * 21) - 10; // Range from -10% to 10%
-        saturation = (Math.random() * 0.4) + 0.8; // Range from 0.8 to 1.2
-        brightness = (Math.random() * 0.4) - 0.2; // Range from -0.2 to 0.2
-        contrast = (Math.random() * 0.4) + 0.8; // Range from 0.8 to 1.2
-        fpsAdjustment = (Math.random() * 10) - 5; // Range from -5% to 5%
-        
-        // NEW: Random audio adjustments
-        reverbLevel = Math.floor(Math.random() * 60); // Most users prefer not too extreme
-        delayLevel = Math.floor(Math.random() * 50);
-        pitchShift = Math.floor(Math.random() * 9) - 4; // Range from -4 to 4
-        distortion = Math.floor(Math.random() * 30); // Not too harsh
-        noiseReduction = Math.floor(Math.random() * 15);
-        eqLowLevel = Math.floor(Math.random() * 11) - 5; // Range from -5 to 5
-        eqMidLevel = Math.floor(Math.random() * 11) - 5;
-        eqHighLevel = Math.floor(Math.random() * 11) - 5;
-        compression = Math.floor(Math.random() * 15);
-        deEssing = Math.floor(Math.random() * 6);
-        
-        // No random watermark - this should be explicitly set by user
-    } else {
-        // Extract existing video parameters
-        const speedInput = view.state.values.speed_adjustment?.speed_input?.value;
-        if (speedInput && speedInput.trim() !== '') {
-            speedAdjustment = parseFloat(speedInput);
-        }
-        
-        const saturationInput = view.state.values.saturation_adjustment?.saturation_input?.value;
-        if (saturationInput && saturationInput.trim() !== '') {
-            saturation = parseFloat(saturationInput);
-        }
-        
-        const brightnessInput = view.state.values.brightness_adjustment?.brightness_input?.value;
-        if (brightnessInput && brightnessInput.trim() !== '') {
-            brightness = parseFloat(brightnessInput);
-        }
-        
-        const contrastInput = view.state.values.contrast_adjustment?.contrast_input?.value;
-        if (contrastInput && contrastInput.trim() !== '') {
-            contrast = parseFloat(contrastInput);
-        }
-        
-        const fpsInput = view.state.values.fps_adjustment?.fps_input?.value;
-        if (fpsInput && fpsInput.trim() !== '') {
-            fpsAdjustment = parseFloat(fpsInput);
-        }
-        
-        // NEW: Extract audio parameters
-        const reverbInput = view.state.values.reverb_level?.reverb_input?.value;
-        if (reverbInput && reverbInput.trim() !== '') {
-            reverbLevel = parseFloat(reverbInput);
-        }
-        
-        const delayInput = view.state.values.delay_level?.delay_input?.value;
-        if (delayInput && delayInput.trim() !== '') {
-            delayLevel = parseFloat(delayInput);
-        }
-        
-        const pitchInput = view.state.values.pitch_shift?.pitch_input?.value;
-        if (pitchInput && pitchInput.trim() !== '') {
-            pitchShift = parseFloat(pitchInput);
-        }
-        
-        const distortionInput = view.state.values.distortion?.distortion_input?.value;
-        if (distortionInput && distortionInput.trim() !== '') {
-            distortion = parseFloat(distortionInput);
-        }
-        
-        const noiseReductionInput = view.state.values.noise_reduction?.noise_reduction_input?.value;
-        if (noiseReductionInput && noiseReductionInput.trim() !== '') {
-            noiseReduction = parseFloat(noiseReductionInput);
-        }
-        
-        const eqLowInput = view.state.values.eq_low_level?.eq_low_input?.value;
-        if (eqLowInput && eqLowInput.trim() !== '') {
-            eqLowLevel = parseFloat(eqLowInput);
-        }
-        
-        const eqMidInput = view.state.values.eq_mid_level?.eq_mid_input?.value;
-        if (eqMidInput && eqMidInput.trim() !== '') {
-            eqMidLevel = parseFloat(eqMidInput);
-        }
-        
-        const eqHighInput = view.state.values.eq_high_level?.eq_high_input?.value;
-        if (eqHighInput && eqHighInput.trim() !== '') {
-            eqHighLevel = parseFloat(eqHighInput);
-        }
-        
-        const compressionInput = view.state.values.compression?.compression_input?.value;
-        if (compressionInput && compressionInput.trim() !== '') {
-            compression = parseFloat(compressionInput);
-        }
-        
-        const deEssingInput = view.state.values.de_essing?.de_essing_input?.value;
-        if (deEssingInput && deEssingInput.trim() !== '') {
-            deEssing = parseFloat(deEssingInput);
-        }
-        
-        // NEW: Extract text watermark
-        const textWatermarkInput = view.state.values.text_watermark?.text_watermark_input?.value;
-        if (textWatermarkInput && textWatermarkInput.trim() !== '') {
-            textWatermark = textWatermarkInput.trim();
-        }
-    }
+    // Log the parameters being used
+    console.log(`Processing parameters: Speed=${speedAdjustment}%, Saturation=${saturation.toFixed(2)}, Brightness=${brightness.toFixed(2)}, Contrast=${contrast.toFixed(2)}, FPS=${fpsAdjustment}%`);
+    console.log(`Audio parameters: Reverb=${reverbLevel}, Delay=${delayLevel}, Pitch=${pitchShift.toFixed(2)}, Distortion=${distortion}, NoiseReduction=${noiseReduction}`);
+    console.log(`EQ: Low=${eqLowLevel.toFixed(2)}, Mid=${eqMidLevel.toFixed(2)}, High=${eqHighLevel.toFixed(2)}, Compression=${compression}, DeEssing=${deEssing}`);
     
-    console.log(`Processing parameters: Speed=${speedAdjustment}%, Saturation=${saturation}, Brightness=${brightness}, Contrast=${contrast}, FPS=${fpsAdjustment}%`);
-    // Log audio parameters
-    console.log(`Audio parameters: Reverb=${reverbLevel}, Delay=${delayLevel}, Pitch=${pitchShift}, Distortion=${distortion}, NoiseReduction=${noiseReduction}`);
-    console.log(`EQ: Low=${eqLowLevel}, Mid=${eqMidLevel}, High=${eqHighLevel}, Compression=${compression}, DeEssing=${deEssing}`);
     // Log text watermark if present
     if (textWatermark) {
         console.log(`Text Watermark: "${textWatermark}"`);
@@ -893,27 +483,34 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
 
                 // Process video with the new textWatermark parameter
                 try {
+                    // Slightly vary parameters for each video to make each one unique
+                    const uniqueSpeedAdj = speedAdjustment + (Math.random() * 0.6 - 0.3); // +/- 0.3%
+                    const uniqueSaturation = saturation + (Math.random() * 0.04 - 0.02); // +/- 0.02
+                    const uniqueBrightness = brightness + (Math.random() * 0.02 - 0.01); // +/- 0.01
+                    const uniqueContrast = contrast + (Math.random() * 0.04 - 0.02); // +/- 0.02
+                    const uniqueFps = fpsAdjustment + (Math.random() * 0.4 - 0.2); // +/- 0.2%
+                    
                     // First apply standard processing
                     const processedPath = await processVideo(
                         inputPath, 
                         outputPath, 
-                        speedAdjustment, 
-                        saturation, 
-                        brightness, 
-                        contrast, 
-                        fpsAdjustment,
-                        // Audio parameters
-                        reverbLevel,
-                        delayLevel,
-                        pitchShift,
-                        distortion,
-                        noiseReduction,
-                        eqLowLevel,
-                        eqMidLevel,
-                        eqHighLevel,
-                        compression,
-                        deEssing,
-                        // Text watermark parameter
+                        uniqueSpeedAdj, 
+                        uniqueSaturation, 
+                        uniqueBrightness, 
+                        uniqueContrast, 
+                        uniqueFps,
+                        // Audio parameters with very minimal variations
+                        reverbLevel + Math.floor(Math.random() * 3 - 1),
+                        delayLevel + Math.floor(Math.random() * 3 - 1),
+                        pitchShift + (Math.random() * 0.2 - 0.1),
+                        distortion + Math.floor(Math.random() * 2 - 1),
+                        noiseReduction + Math.floor(Math.random() * 2 - 1),
+                        eqLowLevel + (Math.random() * 0.4 - 0.2),
+                        eqMidLevel + (Math.random() * 0.4 - 0.2),
+                        eqHighLevel + (Math.random() * 0.4 - 0.2),
+                        compression + Math.floor(Math.random() * 2 - 1),
+                        deEssing,  // Keep de-essing as is, it's already minimal
+                        // Text watermark parameter - kept as is
                         textWatermark
                     );
                     console.log('Processing completed for:', videoInfo.file?.name || 'Unknown');
