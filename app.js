@@ -407,17 +407,17 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
     let contrast = 0.95 + (Math.random() * 0.1); // Range from 0.95 to 1.05
     let fpsAdjustment = (Math.random() * 2) - 1; // Range from -1% to 1%
     
-    // Generate extremely subtle random audio adjustments
-    let reverbLevel = Math.floor(Math.random() * 15); // Very subtle reverb
-    let delayLevel = Math.floor(Math.random() * 10); // Very subtle delay
-    let pitchShift = (Math.random() * 1) - 0.5; // Range from -0.5 to 0.5 semitones
-    let distortion = Math.floor(Math.random() * 5); // Minimal distortion
-    let noiseReduction = Math.floor(Math.random() * 5); // Minimal noise reduction
-    let eqLowLevel = (Math.random() * 2) - 1; // Range from -1 to 1
-    let eqMidLevel = (Math.random() * 2) - 1; // Range from -1 to 1
-    let eqHighLevel = (Math.random() * 2) - 1; // Range from -1 to 1
-    let compression = Math.floor(Math.random() * 5); // Minimal compression
-    let deEssing = Math.floor(Math.random() * 2); // Minimal de-essing
+    // Generate ultra-minimal random audio adjustments
+    let reverbLevel = Math.floor(Math.random() * 6); // Very subtle reverb (0-5)
+    let delayLevel = Math.floor(Math.random() * 4); // Very subtle delay (0-3)
+    let pitchShift = (Math.random() * 0.4) - 0.2; // Range from -0.2 to 0.2 semitones (tiny)
+    let distortion = Math.floor(Math.random() * 3); // Virtually no distortion
+    let noiseReduction = Math.floor(Math.random() * 3); // Virtually no noise reduction
+    let eqLowLevel = (Math.random() * 1) - 0.5; // Range from -0.5 to 0.5 (minimal)
+    let eqMidLevel = (Math.random() * 1) - 0.5; // Range from -0.5 to 0.5 (minimal)
+    let eqHighLevel = (Math.random() * 1) - 0.5; // Range from -0.5 to 0.5 (minimal)
+    let compression = Math.floor(Math.random() * 3); // Virtually no compression
+    let deEssing = Math.floor(Math.random() * 1.5); // Virtually no de-essing
     
     // Only extract text watermark (the one option we kept)
     let textWatermark = null;
@@ -499,17 +499,17 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
                         uniqueBrightness, 
                         uniqueContrast, 
                         uniqueFps,
-                        // Audio parameters with very minimal variations
-                        reverbLevel + Math.floor(Math.random() * 3 - 1),
-                        delayLevel + Math.floor(Math.random() * 3 - 1),
-                        pitchShift + (Math.random() * 0.2 - 0.1),
-                        distortion + Math.floor(Math.random() * 2 - 1),
-                        noiseReduction + Math.floor(Math.random() * 2 - 1),
-                        eqLowLevel + (Math.random() * 0.4 - 0.2),
-                        eqMidLevel + (Math.random() * 0.4 - 0.2),
-                        eqHighLevel + (Math.random() * 0.4 - 0.2),
-                        compression + Math.floor(Math.random() * 2 - 1),
-                        deEssing,  // Keep de-essing as is, it's already minimal
+                        // Audio parameters with ultra-minimal variations
+                        reverbLevel + Math.floor(Math.random() * 2 - 0.5), // Tiny variation
+                        delayLevel + Math.floor(Math.random() * 2 - 0.5), // Tiny variation
+                        pitchShift + (Math.random() * 0.1 - 0.05), // Extremely tiny pitch variation
+                        distortion, // No additional variation needed
+                        noiseReduction, // No additional variation needed
+                        eqLowLevel + (Math.random() * 0.2 - 0.1), // Tiny variation
+                        eqMidLevel + (Math.random() * 0.2 - 0.1), // Tiny variation
+                        eqHighLevel + (Math.random() * 0.2 - 0.1), // Tiny variation
+                        compression, // No additional variation needed
+                        deEssing,  // No additional variation needed
                         // Text watermark parameter - kept as is
                         textWatermark
                     );
