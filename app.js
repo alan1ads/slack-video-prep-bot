@@ -344,6 +344,24 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
                             text: "*Automatic Subtle Changes*\nEach video will be processed with small, random variations to make it unique but still look natural."
                         }
                     },
+                    // Add the Variables input field
+                    {
+                        type: 'input',
+                        block_id: 'variables_count',
+                        element: {
+                            type: 'plain_text_input',
+                            action_id: 'variables_input',
+                            initial_value: '1',
+                            placeholder: {
+                                type: 'plain_text',
+                                text: 'Enter number (e.g., 2 for two versions of each video)'
+                            }
+                        },
+                        label: {
+                            type: 'plain_text',
+                            text: 'Number of Variations'
+                        }
+                    },
                     // Text Watermark - the only option we keep
                     {
                         type: 'input',
@@ -382,14 +400,14 @@ app.action('process_multiple_videos', async ({ ack, body, client }) => {
     }
 });
 
-// Handle modal submission
+// Now modify the modal submission handler to support multiple variations
 app.view('video_processing_modal', async ({ ack, body, view, client }) => {
     await ack();
 
     // Extract channel ID
     const channelId = body.view.private_metadata || body.channel.id;
     
-    // Get the pending videos for this channel - CRITICAL CHANGE: retrieve latest state
+    // Get the pending videos for this channel
     let channelVideos = pendingVideos.get(channelId) || [];
     
     // Double-check video count with a fresh look at the queue
@@ -399,25 +417,13 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
         console.log(`Channel ${mapChannelId}: ${videos.length} videos ${mapChannelId === channelId ? '(MATCH)' : ''}`);
     });
     
-    // ALWAYS use randomized values for all parameters except text watermark
-    // Generate extremely subtle random video adjustments
-    let speedAdjustment = Math.floor(Math.random() * 5) - 2; // Range from -2% to 2%
-    let saturation = 0.95 + (Math.random() * 0.1); // Range from 0.95 to 1.05
-    let brightness = (Math.random() * 0.1) - 0.05; // Range from -0.05 to 0.05
-    let contrast = 0.95 + (Math.random() * 0.1); // Range from 0.95 to 1.05
-    let fpsAdjustment = (Math.random() * 2) - 1; // Range from -1% to 1%
-    
-    // Generate ultra-minimal random audio adjustments
-    let reverbLevel = Math.floor(Math.random() * 6); // Very subtle reverb (0-5)
-    let delayLevel = Math.floor(Math.random() * 4); // Very subtle delay (0-3)
-    let pitchShift = (Math.random() * 0.4) - 0.2; // Range from -0.2 to 0.2 semitones (tiny)
-    let distortion = Math.floor(Math.random() * 3); // Virtually no distortion
-    let noiseReduction = Math.floor(Math.random() * 3); // Virtually no noise reduction
-    let eqLowLevel = (Math.random() * 1) - 0.5; // Range from -0.5 to 0.5 (minimal)
-    let eqMidLevel = (Math.random() * 1) - 0.5; // Range from -0.5 to 0.5 (minimal)
-    let eqHighLevel = (Math.random() * 1) - 0.5; // Range from -0.5 to 0.5 (minimal)
-    let compression = Math.floor(Math.random() * 3); // Virtually no compression
-    let deEssing = Math.floor(Math.random() * 1.5); // Virtually no de-essing
+    // Extract the variables count
+    let variablesCount = 1; // Default to 1 variation
+    const variablesInput = view.state.values.variables_count?.variables_input?.value;
+    if (variablesInput && variablesInput.trim() !== '') {
+        variablesCount = Math.max(1, Math.min(5, parseInt(variablesInput.trim()))); // Limit to 1-5 variations
+    }
+    console.log(`Creating ${variablesCount} variations of each video`);
     
     // Only extract text watermark (the one option we kept)
     let textWatermark = null;
@@ -430,14 +436,53 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
     const shouldRehash = true;
     console.log('Video rehashing is enabled by default');
     
-    if (shouldRehash) {
-        console.log('Video rehashing is enabled');
+    // Generate multiple sets of random parameters (one for each variation)
+    const parameterSets = [];
+    for (let i = 0; i < variablesCount; i++) {
+        // Generate ultra-minimal random video adjustments
+        const speedAdjustment = Math.floor(Math.random() * 5) - 2; // Range from -2% to 2%
+        const saturation = 0.95 + (Math.random() * 0.1); // Range from 0.95 to 1.05
+        const brightness = (Math.random() * 0.1) - 0.05; // Range from -0.05 to 0.05
+        const contrast = 0.95 + (Math.random() * 0.1); // Range from 0.95 to 1.05
+        const fpsAdjustment = (Math.random() * 2) - 1; // Range from -1% to 1%
+        
+        // Generate ultra-minimal random audio adjustments
+        const reverbLevel = Math.floor(Math.random() * 4); // Very subtle reverb (0-3)
+        const delayLevel = Math.floor(Math.random() * 3); // Very subtle delay (0-2)
+        const pitchShift = (Math.random() * 0.4) - 0.2; // Range from -0.2 to 0.2 semitones (tiny)
+        const distortion = Math.floor(Math.random() * 6); // Subtle distortion (0-5)
+        const noiseReduction = Math.floor(Math.random() * 3); // Virtually no noise reduction
+        const eqLowLevel = (Math.random() * 1) - 0.5; // Range from -0.5 to 0.5 (minimal)
+        const eqMidLevel = (Math.random() * 1) - 0.5; // Range from -0.5 to 0.5 (minimal)
+        const eqHighLevel = (Math.random() * 1) - 0.5; // Range from -0.5 to 0.5 (minimal)
+        const compression = Math.floor(Math.random() * 3); // Virtually no compression
+        const deEssing = Math.floor(Math.random() * 1.5); // Virtually no de-essing
+        
+        // Store this set of parameters
+        parameterSets.push({
+            speedAdjustment,
+            saturation,
+            brightness,
+            contrast,
+            fpsAdjustment,
+            reverbLevel,
+            delayLevel,
+            pitchShift,
+            distortion,
+            noiseReduction,
+            eqLowLevel,
+            eqMidLevel,
+            eqHighLevel,
+            compression,
+            deEssing
+        });
+        
+        // Log the parameters for this variation
+        console.log(`Variation ${i+1} parameters:`);
+        console.log(`  Video: Speed=${speedAdjustment}%, Saturation=${saturation.toFixed(2)}, Brightness=${brightness.toFixed(2)}, Contrast=${contrast.toFixed(2)}, FPS=${fpsAdjustment}%`);
+        console.log(`  Audio: Reverb=${reverbLevel}, Delay=${delayLevel}, Pitch=${pitchShift.toFixed(2)}, Distortion=${distortion}`);
+        console.log(`  EQ: Low=${eqLowLevel.toFixed(2)}, Mid=${eqMidLevel.toFixed(2)}, High=${eqHighLevel.toFixed(2)}, Compression=${compression}, DeEssing=${deEssing}`);
     }
-    
-    // Log the parameters being used
-    console.log(`Processing parameters: Speed=${speedAdjustment}%, Saturation=${saturation.toFixed(2)}, Brightness=${brightness.toFixed(2)}, Contrast=${contrast.toFixed(2)}, FPS=${fpsAdjustment}%`);
-    console.log(`Audio parameters: Reverb=${reverbLevel}, Delay=${delayLevel}, Pitch=${pitchShift.toFixed(2)}, Distortion=${distortion}, NoiseReduction=${noiseReduction}`);
-    console.log(`EQ: Low=${eqLowLevel.toFixed(2)}, Mid=${eqMidLevel.toFixed(2)}, High=${eqHighLevel.toFixed(2)}, Compression=${compression}, DeEssing=${deEssing}`);
     
     // Log text watermark if present
     if (textWatermark) {
@@ -459,113 +504,125 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
             return;
         }
         
-        // Notify start of processing with the CORRECT count
-        console.log(`Starting to process ${videoCount} videos for channel ${channelId}`);
+        // Calculate total number of output videos
+        const totalOutputs = videoCount * variablesCount;
+        
+        // Notify start of processing with the CORRECT count and variations info
+        console.log(`Starting to process ${videoCount} videos with ${variablesCount} variations each (total: ${totalOutputs} outputs)`);
         await client.chat.postMessage({
             channel: channelId,
-            text: `Starting to process ${videoCount} videos... This might take a while.`
+            text: `Starting to process ${videoCount} videos with ${variablesCount} variation${variablesCount > 1 ? 's' : ''} each (total: ${totalOutputs} output videos). This might take a while.`
         });
 
         // Process videos sequentially with delay between each
         for (const videoInfo of channelVideos) {
             try {
                 const inputPath = path.join(inputDir, `input_${videoInfo.file_id}.mp4`);
-                const outputPath = path.join(outputDir, `output_${videoInfo.file_id}.mp4`);
 
-                console.log('Processing video:', videoInfo.file?.name || 'Unknown');
-                
-                // Download
+                // Download original video once
                 await downloadFile(videoInfo.file.url_private_download, inputPath);
                 console.log('Download completed for:', videoInfo.file?.name || 'Unknown');
                 
                 // Add a small delay between operations
                 await new Promise(resolve => setTimeout(resolve, 1000));
 
-                // Process video with the new textWatermark parameter
-                try {
-                    // Slightly vary parameters for each video to make each one unique
-                    const uniqueSpeedAdj = speedAdjustment + (Math.random() * 0.6 - 0.3); // +/- 0.3%
-                    const uniqueSaturation = saturation + (Math.random() * 0.04 - 0.02); // +/- 0.02
-                    const uniqueBrightness = brightness + (Math.random() * 0.02 - 0.01); // +/- 0.01
-                    const uniqueContrast = contrast + (Math.random() * 0.04 - 0.02); // +/- 0.02
-                    const uniqueFps = fpsAdjustment + (Math.random() * 0.4 - 0.2); // +/- 0.2%
+                // Process each variation of this video
+                for (let i = 0; i < parameterSets.length; i++) {
+                    const params = parameterSets[i];
+                    const variationSuffix = variablesCount > 1 ? `_v${i+1}` : '';
+                    const outputPath = path.join(outputDir, `output_${videoInfo.file_id}${variationSuffix}.mp4`);
                     
-                    // First apply standard processing
-                    const processedPath = await processVideo(
-                        inputPath, 
-                        outputPath, 
-                        uniqueSpeedAdj, 
-                        uniqueSaturation, 
-                        uniqueBrightness, 
-                        uniqueContrast, 
-                        uniqueFps,
-                        // Audio parameters with ultra-minimal variations
-                        reverbLevel + Math.floor(Math.random() * 2 - 0.5), // Tiny variation
-                        delayLevel + Math.floor(Math.random() * 2 - 0.5), // Tiny variation
-                        pitchShift + (Math.random() * 0.1 - 0.05), // Extremely tiny pitch variation
-                        distortion, // No additional variation needed
-                        noiseReduction, // No additional variation needed
-                        eqLowLevel + (Math.random() * 0.2 - 0.1), // Tiny variation
-                        eqMidLevel + (Math.random() * 0.2 - 0.1), // Tiny variation
-                        eqHighLevel + (Math.random() * 0.2 - 0.1), // Tiny variation
-                        compression, // No additional variation needed
-                        deEssing,  // No additional variation needed
-                        // Text watermark parameter - kept as is
-                        textWatermark
-                    );
-                    console.log('Processing completed for:', videoInfo.file?.name || 'Unknown');
-                    
-                    // Always apply rehash as a standard part of processing
-                    console.log('Applying rehash data refresh to:', videoInfo.file?.name || 'Unknown');
-                    const rehashOutputPath = path.join(outputDir, `rehash_${videoInfo.file_id}.mp4`);
-                    
-                    // Use the actual processed path that came back from processVideo
-                    // This could be different if a watermark was applied
-                    const actualInputPath = processedPath || outputPath;
-                    
-                    // Check if input path exists
-                    if (!fs.existsSync(actualInputPath)) {
-                        console.error(`Input file for rehash doesn't exist: ${actualInputPath}`);
-                        throw new Error('Processed video file not found');
-                    }
-                    
-                    // Pass the text watermark to the rehash function as well
-                    await applyRehash(actualInputPath, rehashOutputPath, overlaysDir, textWatermark);
-                    
-                    // Replace the output path with the rehashed version
-                    if (fs.existsSync(actualInputPath) && actualInputPath !== outputPath) {
-                        fs.unlinkSync(actualInputPath);
-                    }
-                    if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-                    
-                    // Rename the rehashed output to the standard output path for upload
-                    fs.renameSync(rehashOutputPath, outputPath);
-                    console.log('Rehash completed for:', videoInfo.file?.name || 'Unknown');
+                    try {
+                        console.log(`Processing video ${videoInfo.file?.name || 'Unknown'} - variation ${i+1}/${parameterSets.length}`);
+                        
+                        // Add slight variation to each parameter to make each video truly unique
+                        const uniqueSpeedAdj = params.speedAdjustment + (Math.random() * 0.6 - 0.3); // +/- 0.3%
+                        const uniqueSaturation = params.saturation + (Math.random() * 0.04 - 0.02); // +/- 0.02
+                        const uniqueBrightness = params.brightness + (Math.random() * 0.02 - 0.01); // +/- 0.01
+                        const uniqueContrast = params.contrast + (Math.random() * 0.04 - 0.02); // +/- 0.02
+                        const uniqueFps = params.fpsAdjustment + (Math.random() * 0.4 - 0.2); // +/- 0.2%
+                        
+                        // Apply processing with this variation's parameters
+                        const processedPath = await processVideo(
+                            inputPath, 
+                            outputPath, 
+                            uniqueSpeedAdj, 
+                            uniqueSaturation, 
+                            uniqueBrightness, 
+                            uniqueContrast, 
+                            uniqueFps,
+                            // Audio parameters with ultra-minimal variations
+                            params.reverbLevel + Math.floor(Math.random() * 2 - 0.5),
+                            params.delayLevel + Math.floor(Math.random() * 2 - 0.5),
+                            params.pitchShift + (Math.random() * 0.1 - 0.05),
+                            params.distortion,
+                            params.noiseReduction,
+                            params.eqLowLevel + (Math.random() * 0.2 - 0.1),
+                            params.eqMidLevel + (Math.random() * 0.2 - 0.1),
+                            params.eqHighLevel + (Math.random() * 0.2 - 0.1),
+                            params.compression,
+                            params.deEssing,
+                            // Text watermark parameter - kept as is
+                            textWatermark
+                        );
+                        console.log(`Processing completed for variation ${i+1} of: ${videoInfo.file?.name || 'Unknown'}`);
+                        
+                        // Always apply rehash as a standard part of processing
+                        console.log(`Applying rehash data refresh to variation ${i+1} of: ${videoInfo.file?.name || 'Unknown'}`);
+                        const rehashOutputPath = path.join(outputDir, `rehash_${videoInfo.file_id}${variationSuffix}.mp4`);
+                        
+                        // Use the actual processed path that came back from processVideo
+                        // This could be different if a watermark was applied
+                        const actualInputPath = processedPath || outputPath;
+                        
+                        // Check if input path exists
+                        if (!fs.existsSync(actualInputPath)) {
+                            console.error(`Input file for rehash doesn't exist: ${actualInputPath}`);
+                            throw new Error('Processed video file not found');
+                        }
+                        
+                        // Pass the text watermark to the rehash function as well
+                        await applyRehash(actualInputPath, rehashOutputPath, overlaysDir, textWatermark);
+                        
+                        // Replace the output path with the rehashed version
+                        if (fs.existsSync(actualInputPath) && actualInputPath !== outputPath) {
+                            fs.unlinkSync(actualInputPath);
+                        }
+                        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+                        
+                        // Rename the rehashed output to the standard output path for upload
+                        fs.renameSync(rehashOutputPath, outputPath);
+                        console.log(`Rehash completed for variation ${i+1} of: ${videoInfo.file?.name || 'Unknown'}`);
 
-                    // Upload
-                    await client.files.uploadV2({
-                        channel_id: channelId,
-                        file: fs.createReadStream(outputPath),
-                        filename: `Processed_${videoInfo.file?.name || 'video.mp4'}`,
-                        title: `Processed_${videoInfo.file?.name || 'video.mp4'}`
-                    });
-                    console.log('Upload completed for:', videoInfo.file?.name || 'Unknown');
+                        // Upload this variation
+                        const variationLabel = variablesCount > 1 ? ` (v${i+1})` : '';
+                        await client.files.uploadV2({
+                            channel_id: channelId,
+                            file: fs.createReadStream(outputPath),
+                            filename: `Processed_${videoInfo.file?.name || 'video.mp4'}${variationLabel}`,
+                            title: `Processed_${videoInfo.file?.name || 'video.mp4'}${variationLabel}`
+                        });
+                        console.log(`Upload completed for variation ${i+1} of: ${videoInfo.file?.name || 'Unknown'}`);
 
-                    await client.chat.postMessage({
-                        channel: channelId,
-                        text: `✅ Processed: ${videoInfo.file?.name || 'Unknown video'}`
-                    });
-                } catch (processError) {
-                    console.error(`Error processing video: ${processError.message}`);
-                    await client.chat.postMessage({
-                        channel: channelId,
-                        text: `⚠️ Warning: ${videoInfo.file?.name || 'A video'} was too large to process. Try a smaller video.`
-                    });
+                        // Cleanup this variation
+                        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+                    } catch (variationError) {
+                        console.error(`Error processing variation ${i+1} of video:`, variationError);
+                        await client.chat.postMessage({
+                            channel: channelId,
+                            text: `⚠️ Warning: Variation ${i+1} of ${videoInfo.file?.name || 'A video'} failed to process. Error: ${variationError.message}`
+                        });
+                    }
                 }
 
-                // Cleanup regardless of success or failure
+                // Notify of completion for this original video
+                await client.chat.postMessage({
+                    channel: channelId,
+                    text: `✅ Processed: ${videoInfo.file?.name || 'Unknown video'} (${parameterSets.length} variation${parameterSets.length > 1 ? 's' : ''})`
+                });
+
+                // Cleanup original input
                 if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
-                if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
 
                 // Add delay between videos
                 await new Promise(resolve => setTimeout(resolve, 2000));
@@ -584,7 +641,7 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
 
         await client.chat.postMessage({
             channel: channelId,
-            text: "✅ All videos have been processed! Use /videoprep again if you want to process more videos."
+            text: `✅ All videos have been processed with ${variablesCount} variation${variablesCount > 1 ? 's' : ''} each! Use /videoprep again if you want to process more videos.`
         });
 
     } catch (error) {
