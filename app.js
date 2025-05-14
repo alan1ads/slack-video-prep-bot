@@ -447,14 +447,14 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
         const fpsAdjustment = (Math.random() * 2) - 1; // Range from -1% to 1%
         
         // Generate ultra-minimal random audio adjustments
-        const reverbLevel = Math.floor(Math.random() * 2); // Further reduced from 0-2 to 0-1
+        const reverbLevel = Math.floor(Math.random() * 1.3); // Further reduced from 0-1 to mostly 0, occasionally 1
         const delayLevel = Math.floor(Math.random() * 1.5); // Further reduced from 0-1 to mostly 0, occasionally 1
         const pitchShift = (Math.random() * 0.5) - 0.25; // Slightly increased from ±0.2 to ±0.25 semitones
         const distortion = Math.floor(Math.random() * 2); // Further reduced from 0-2 to 0-1
         const noiseReduction = Math.floor(Math.random() * 4); // Slightly increased from 0-2 to 0-3
-        const eqLowLevel = (Math.random() * 1.2) - 0.6; // Slightly increased from ±0.5 to ±0.6
-        const eqMidLevel = (Math.random() * 1) - 0.5; // Unchanged
-        const eqHighLevel = (Math.random() * 1.2) - 0.6; // Slightly increased from ±0.5 to ±0.6
+        const eqLowLevel = (Math.random() * 0.6) - 0.3; // Reduced from ±0.6 to ±0.3
+        const eqMidLevel = (Math.random() * 0.6) - 0.3; // Reduced from ±0.5 to ±0.3
+        const eqHighLevel = (Math.random() * 0.6) - 0.3; // Reduced from ±0.6 to ±0.3
         const compression = Math.floor(Math.random() * 3); // Virtually no compression
         const deEssing = Math.floor(Math.random() * 1.5); // Virtually no de-essing
         
@@ -552,14 +552,14 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
                             uniqueContrast, 
                             uniqueFps,
                             // Audio parameters with ultra-minimal variations
-                            params.reverbLevel + (Math.random() * 0.2 - 0.1), // Further reduced from ±0.2 to ±0.1
-                            params.delayLevel + (Math.random() * 0.2 - 0.1),  // Further reduced from ±0.2 to ±0.1
+                            params.reverbLevel + (Math.random() * 0.1 - 0.05), // Further reduced from ±0.1 to ±0.05
+                            params.delayLevel + (Math.random() * 0.2 - 0.1),  // Unchanged
                             params.pitchShift + (Math.random() * 0.12 - 0.06), // Slightly increased from ±0.05 to ±0.06
                             params.distortion,
                             params.noiseReduction,
-                            params.eqLowLevel + (Math.random() * 0.24 - 0.12), // Slightly increased from ±0.1 to ±0.12
-                            params.eqMidLevel + (Math.random() * 0.2 - 0.1), // Unchanged
-                            params.eqHighLevel + (Math.random() * 0.24 - 0.12), // Slightly increased from ±0.1 to ±0.12
+                            params.eqLowLevel + (Math.random() * 0.1 - 0.05), // Reduced from ±0.12 to ±0.05
+                            params.eqMidLevel + (Math.random() * 0.1 - 0.05), // Reduced from ±0.1 to ±0.05
+                            params.eqHighLevel + (Math.random() * 0.1 - 0.05), // Reduced from ±0.12 to ±0.05
                             params.compression,
                             params.deEssing,
                             // Text watermark parameter - kept as is
