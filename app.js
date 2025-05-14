@@ -447,8 +447,8 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
         const fpsAdjustment = (Math.random() * 2) - 1; // Range from -1% to 1%
         
         // Generate ultra-minimal random audio adjustments
-        const reverbLevel = Math.floor(Math.random() * 4); // Very subtle reverb (0-3)
-        const delayLevel = Math.floor(Math.random() * 3); // Very subtle delay (0-2)
+        const reverbLevel = Math.floor(Math.random() * 3); // Reduced from 0-3 to 0-2
+        const delayLevel = Math.floor(Math.random() * 2); // Reduced from 0-2 to 0-1
         const pitchShift = (Math.random() * 0.4) - 0.2; // Range from -0.2 to 0.2 semitones (tiny)
         const distortion = Math.floor(Math.random() * 6); // Subtle distortion (0-5)
         const noiseReduction = Math.floor(Math.random() * 3); // Virtually no noise reduction
@@ -552,8 +552,8 @@ app.view('video_processing_modal', async ({ ack, body, view, client }) => {
                             uniqueContrast, 
                             uniqueFps,
                             // Audio parameters with ultra-minimal variations
-                            params.reverbLevel + Math.floor(Math.random() * 2 - 0.5),
-                            params.delayLevel + Math.floor(Math.random() * 2 - 0.5),
+                            params.reverbLevel + (Math.random() * 0.4 - 0.2),
+                            params.delayLevel + (Math.random() * 0.4 - 0.2),
                             params.pitchShift + (Math.random() * 0.1 - 0.05),
                             params.distortion,
                             params.noiseReduction,
