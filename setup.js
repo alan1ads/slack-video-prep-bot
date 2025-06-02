@@ -35,7 +35,7 @@ if (fs.existsSync(rehashOverlaysDir)) {
     console.log(`✅ Found rehash overlays directory at: ${rehashOverlaysDir}`);
     
     try {
-        // Run the copyOverlays.js script if it exists
+        // Run the copyOverlays.js script if the file exists
         if (fs.existsSync(path.join(__dirname, 'copyOverlays.js'))) {
             console.log('Copying overlays to the main overlays directory...');
             execSync('node copyOverlays.js', { stdio: 'inherit' });
